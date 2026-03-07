@@ -1,22 +1,35 @@
 import * as THREE from 'three';
 
+/**
+ * CustomPeppersGhostEffect
+ *
+ * Renders 4 views in a cross pattern CENTERED on the screen:
+ *
+ *              [  TOP  ]
+ *   [ LEFT ]   [CENTER]   [ RIGHT ]
+ *              [ BOTTOM]
+ *
+ * The cross is always screen-centered regardless of aspect ratio.
+ */
 export class CustomPeppersGhostEffect {
+
     constructor(renderer) {
         const scope = this;
 
         scope.cameraDistance = 15;
         scope.reflectFromAbove = false;
+        scope.viewScale = 1.0;   // uniform size multiplier for each quad
+        scope.centerGap = 0.0;   // extra pixels to push quads away from center
 
-        // Custom properties
-        scope.viewScale = 1.0; // Scales the size of each projection square
-        scope.centerGap = 0.0; // Distance to push projections away from center (in pixels)
+        // Each quad's side length (set by setSize)
+        let _q = 0;
+        // Screen center (set by setSize)
+        let _cx = 0, _cy = 0;
 
-        let _width, _height, _cx, _cy;
-
-        const _cameraF = new THREE.PerspectiveCamera(); //front
-        const _cameraB = new THREE.PerspectiveCamera(); //back
-        const _cameraL = new THREE.PerspectiveCamera(); //left
-        const _cameraR = new THREE.PerspectiveCamera(); //right
+        const _cameraF = new THREE.PerspectiveCamera();
+        const _cameraB = new THREE.PerspectiveCamera();
+        const _cameraL = new THREE.PerspectiveCamera();
+        const _cameraR = new THREE.PerspectiveCamera();
 
         const _position = new THREE.Vector3();
         const _quaternion = new THREE.Quaternion();
@@ -27,105 +40,89 @@ export class CustomPeppersGhostEffect {
         this.setSize = function (width, height) {
             _cx = width / 2;
             _cy = height / 2;
-
-            if (width < height) {
-                _width = width / 3;
-                _height = width / 3;
-            } else {
-                _width = height / 3;
-                _height = height / 3;
-            }
-
+            // Each quad is 1/3 of the smaller dimension
+            _q = Math.min(width, height) / 3;
             renderer.setSize(width, height);
         };
 
         this.render = function (scene, camera) {
             if (scene.matrixWorldAutoUpdate === true) scene.updateMatrixWorld();
-            if (camera.parent === null && camera.matrixWorldAutoUpdate === true) camera.updateMatrixWorld();
+            if (camera.parent === null && camera.matrixWorldAutoUpdate === true)
+                camera.updateMatrixWorld();
 
             camera.matrixWorld.decompose(_position, _quaternion, _scale);
 
-            // front
+            // ── Position four cameras ─────────────────────────────────────────
             _cameraF.position.copy(_position);
             _cameraF.quaternion.copy(_quaternion);
             _cameraF.translateZ(scope.cameraDistance);
             _cameraF.lookAt(scene.position);
 
-            // back
             _cameraB.position.copy(_position);
             _cameraB.quaternion.copy(_quaternion);
-            _cameraB.translateZ(-(scope.cameraDistance));
+            _cameraB.translateZ(-scope.cameraDistance);
             _cameraB.lookAt(scene.position);
-            _cameraB.rotation.z += 180 * (Math.PI / 180);
+            _cameraB.rotation.z += Math.PI;
 
-            // left
             _cameraL.position.copy(_position);
             _cameraL.quaternion.copy(_quaternion);
-            _cameraL.translateX(-(scope.cameraDistance));
+            _cameraL.translateX(-scope.cameraDistance);
             _cameraL.lookAt(scene.position);
-            _cameraL.rotation.x += 90 * (Math.PI / 180);
+            _cameraL.rotation.x += Math.PI / 2;
 
-            // right
             _cameraR.position.copy(_position);
             _cameraR.quaternion.copy(_quaternion);
             _cameraR.translateX(scope.cameraDistance);
             _cameraR.lookAt(scene.position);
-            _cameraR.rotation.x += 90 * (Math.PI / 180);
+            _cameraR.rotation.x += Math.PI / 2;
+
+            // ── Sync projection matrices ──────────────────────────────────────
+            for (const cam of [_cameraF, _cameraB, _cameraL, _cameraR]) {
+                cam.fov = camera.fov;
+                cam.aspect = 1.0;       // each quad is always square
+                cam.near = camera.near;
+                cam.far = camera.far;
+                cam.updateProjectionMatrix();
+            }
 
             renderer.clear();
             renderer.setScissorTest(true);
 
-            // Calculate actual square size and base offset
-            const s = _width * scope.viewScale;
-            const halfS = s / 2;
-            const offset = (_width * scope.viewScale) + scope.centerGap;
+            // ── Centered cross layout ─────────────────────────────────────────
+            //
+            //  All 4 quads are size s × s (= _q × viewScale).
+            //  Quad centres in WebGL coords (origin = bottom-left, Y-up):
+            //
+            //    TOP    : (_cx,        _cy + _q + gap)
+            //    BOTTOM : (_cx,        _cy - _q - gap)
+            //    LEFT   : (_cx - _q - gap,  _cy)
+            //    RIGHT  : (_cx + _q + gap,  _cy)
+            //
+            //  setViewport(left, bottom, width, height) — bottom-left corner.
 
-            // TOP (originally back)
-            // Center of square is at (_cx, _cy + offset)
-            // Bottom-left of square is at (_cx - halfS, _cy + offset - halfS)
-            renderer.setScissor(_cx - halfS, _cy + offset - halfS, s, s);
-            renderer.setViewport(_cx - halfS, _cy + offset - halfS, s, s);
+            const s = _q * scope.viewScale;
+            const hs = s / 2;
+            const gap = scope.centerGap;
 
-            if (scope.reflectFromAbove) {
-                renderer.render(scene, _cameraB);
-            } else {
-                renderer.render(scene, _cameraF);
-            }
+            // TOP    — inner (bottom) edge at _cy, grows up
+            _render(_cameraF, _cameraB, _cx - hs, _cy + gap);
 
-            // BOTTOM (originally front)
-            // Center of square is at (_cx, _cy - offset)
-            renderer.setScissor(_cx - halfS, _cy - offset - halfS, s, s);
-            renderer.setViewport(_cx - halfS, _cy - offset - halfS, s, s);
+            // BOTTOM — inner (top) edge at _cy, grows down
+            _render(_cameraB, _cameraF, _cx - hs, _cy - s - gap);
 
-            if (scope.reflectFromAbove) {
-                renderer.render(scene, _cameraF);
-            } else {
-                renderer.render(scene, _cameraB);
-            }
+            // LEFT   — inner (right) edge at _cx, grows left
+            _render(_cameraL, _cameraR, _cx - s - gap, _cy - hs);
 
-            // LEFT (originally left)
-            // Center of square is at (_cx - offset, _cy)
-            renderer.setScissor(_cx - offset - halfS, _cy - halfS, s, s);
-            renderer.setViewport(_cx - offset - halfS, _cy - halfS, s, s);
-
-            if (scope.reflectFromAbove) {
-                renderer.render(scene, _cameraR);
-            } else {
-                renderer.render(scene, _cameraL);
-            }
-
-            // RIGHT (originally right)
-            // Center of square is at (_cx + offset, _cy)
-            renderer.setScissor(_cx + offset - halfS, _cy - halfS, s, s);
-            renderer.setViewport(_cx + offset - halfS, _cy - halfS, s, s);
-
-            if (scope.reflectFromAbove) {
-                renderer.render(scene, _cameraL);
-            } else {
-                renderer.render(scene, _cameraR);
-            }
+            // RIGHT  — inner (left) edge at _cx, grows right
+            _render(_cameraR, _cameraL, _cx + gap, _cy - hs);
 
             renderer.setScissorTest(false);
+
+            function _render(normalCam, invertedCam, x, y) {
+                renderer.setScissor(x, y, s, s);
+                renderer.setViewport(x, y, s, s);
+                renderer.render(scene, scope.reflectFromAbove ? invertedCam : normalCam);
+            }
         };
     }
 }

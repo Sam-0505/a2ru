@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ecosystem Controller</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0e0e12;
+            --card: #1a1a24;
+            --border: rgba(255, 255, 255, 0.08);
+            --bamboo: #66BB6A;
+            --factory: #ef5350;
+            --human: #42A5F5;
+            --house: #FFA726;
+            --tree: #26A69A;
+            --panda: #e0e0e0;
+            --fire: #FF3D00;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: #f0f0f0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 16px 40px;
+            gap: 20px;
+        }
+
+        h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #aaa;
+        }
+
+        /* ── Live Status Bar ────────────────────────────── */
+        #status-bar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            width: 100%;
+            max-width: 560px;
+        }
+
+        .stat-pill {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 6px 14px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stat-pill span.val {
+            font-weight: 700;
+            color: #fff;
+        }
+
+        #stat-fire.active {
+            color: var(--fire);
+        }
+
+        /* ── Spawn Grid ─────────────────────────────────── */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 14px;
+            width: 100%;
+            max-width: 560px;
+        }
+
+        button.spawn-btn {
+            background: var(--card);
+            color: #fff;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 22px 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.1s, box-shadow 0.2s;
+        }
+
+        button.spawn-btn:active {
+            transform: scale(0.94);
+        }
+
+        .icon {
+            font-size: 2.2rem;
+        }
+
+        button.spawn-btn.bamboo {
+            border-bottom: 3px solid var(--bamboo);
+        }
+
+        button.spawn-btn.house {
+            border-bottom: 3px solid var(--house);
+        }
+
+        button.spawn-btn.factory {
+            border-bottom: 3px solid var(--factory);
+        }
+
+        button.spawn-btn.human {
+            border-bottom: 3px solid var(--human);
+        }
+
+        button.spawn-btn.tree {
+            border-bottom: 3px solid var(--tree);
+        }
+
+        button.spawn-btn.panda {
+            border-bottom: 3px solid var(--panda);
+        }
+
+        button.spawn-btn:hover {
+            box-shadow: 0 0 14px rgba(255, 255, 255, 0.08);
+        }
+
+        /* ── Action Pad ─────────────────────────────────── */
+        .action-pad {
+            display: flex;
+            gap: 12px;
+            width: 100%;
+            max-width: 560px;
+        }
+
+        .action-pad button {
+            flex: 1;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 1rem;
+            color: #fff;
+            cursor: pointer;
+            letter-spacing: 0.04em;
+            transition: opacity 0.15s;
+        }
+
+        .action-pad button:active {
+            opacity: 0.7;
+        }
+
+        #fire-btn {
+            background: #c62828;
+        }
+
+        #stop-fire-btn {
+            background: #1565C0;
+        }
+
+        /* ── Description ────────────────────────────────── */
+        .legend {
+            width: 100%;
+            max-width: 560px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 14px 18px;
+            font-size: 0.8rem;
+            color: #888;
+            line-height: 1.9;
+        }
+
+        .legend strong {
+            color: #ccc;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>🌍 Ecosystem Controller</h1>
+
+    <!-- Live status pills -->
+    <div id="status-bar">
+        <div class="stat-pill">🐼 Pandas: <span class="val" id="stat-pandas">—</span></div>
+        <div class="stat-pill">🎋 Bamboo: <span class="val" id="stat-bamboo">—</span></div>
+        <div class="stat-pill">🌲 Trees: <span class="val" id="stat-trees">—</span></div>
+        <div class="stat-pill">🏭 Factories: <span class="val" id="stat-factories">—</span></div>
+        <div class="stat-pill">🧑 Humans: <span class="val" id="stat-humans">—</span></div>
+        <div class="stat-pill">🔥 Fire: <span class="val" id="stat-fire">—</span></div>
+    </div>
+
+    <!-- Spawn buttons -->
+    <div class="controls-grid">
+        <button class="spawn-btn bamboo" data-type="bamboo"> <span class="icon">🎋</span><span>Add
+                Bamboo</span></button>
+        <button class="spawn-btn panda" data-type="panda"> <span class="icon">🐼</span><span>Add Panda</span></button>
+        <button class="spawn-btn tree" data-type="tree"> <span class="icon">🌲</span><span>Add Tree</span></button>
+        <button class="spawn-btn house" data-type="house"> <span class="icon">🏠</span><span>Add House</span></button>
+        <button class="spawn-btn factory" data-type="factory"> <span class="icon">🏭</span><span>Add
+                Factory</span></button>
+        <button class="spawn-btn human" data-type="human"> <span class="icon">🧑</span><span>Add Human</span></button>
+    </div>
+
+    <!-- Fire actions -->
+    <div class="action-pad">
+        <button id="fire-btn">🔥 Trigger Fire</button>
+        <button id="stop-fire-btn">💧 Stop Fire</button>
+    </div>
+
+    <!-- Rules legend -->
+    <div class="legend">
+        <strong>Rules:</strong><br>
+        🎋 Bamboo → spawns 🐼 Panda after 1.5 s (if &lt;3 factories &amp; no fire)<br>
+        🐼 Panda spreads seeds → grows 🌲 Trees over time<br>
+        🏠🏭 ≥ 3 structures → pandas start disappearing<br>
+        🏭 ≥ 5 factories → 🔥 forest fire auto-triggers<br>
+        🔥 Fire destroys bamboo, trees, pandas &amp; houses<br>
+        🧑 Humans help extinguish 🔥 fire<br>
+        After fire ends → 🌲 trees regrow rapidly
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="control.js"></script>
+</body>
+
+</html>
