@@ -279,12 +279,21 @@ function init() {
     // ── Effect ────────────────────────────────────────────────────────────────
     effect = new CustomPeppersGhostEffect(renderer);
     effect.setSize(window.innerWidth, window.innerHeight);
-    effect.cameraDistance = 4;
+    effect.cameraDistance = 2.3;
+    effect.centerGap = 141;
+    effect.viewScale = 1.45;
+    barrenMap.repeat.set(20, 20);
+    // Also update earth curvature default
+    {
+        const cg = new THREE.SphereGeometry(EARTH_RADIUS, 64, 32, 0, Math.PI * 2, 0, 1.162732);
+        cg.translate(0, -EARTH_RADIUS, 0);
+        earthSlice.geometry = cg;
+    }
 
     // ── GUI (lil-gui) ─────────────────────────────────────────────────────────
     import('https://unpkg.com/three@0.160.0/examples/jsm/libs/lil-gui.module.min.js').then(({ GUI }) => {
         const gui = new GUI({ title: 'Display Controls' });
-        const s = { cameraDistance: 4, spreadDistance: 0, projectionSize: 1.0, textureScale: 4, curvature: Math.PI / 2.5 };
+        const s = { cameraDistance: 2.3, spreadDistance: 141, projectionSize: 1.45, textureScale: 20, curvature: 1.162732 };
         gui.add(s, 'cameraDistance', 1, 15, 0.1).name('Hologram Distance').onChange(v => effect.cameraDistance = v);
         gui.add(s, 'spreadDistance', 0, 300, 1).name('Spread Distance (px)').onChange(v => effect.centerGap = v);
         gui.add(s, 'projectionSize', 0.3, 3, 0.05).name('Projection Size').onChange(v => effect.viewScale = v);
