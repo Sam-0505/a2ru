@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CustomPeppersGhostEffect } from './CustomPeppersGhostEffect.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 // ─── ECOSYSTEM STATE ──────────────────────────────────────────────────────────
 const EARTH_RADIUS = 1.0;
@@ -17,6 +18,7 @@ const state = {
 
 let container, camera, scene, renderer, effect, group, earthSlice, barrenMap;
 let lastTime = 0;
+let pandaFBXTemplate = null;   // preloaded FBX, cloned per spawn
 
 init();
 animate();
@@ -91,6 +93,18 @@ function buildBamboo() {
 }
 
 function buildPanda() {
+    if (pandaFBXTemplate) {
+        const clone = pandaFBXTemplate.clone();
+        clone.scale.setScalar(0.0008);   // FBX is huge — scale way down
+        clone.traverse(c => {
+            if (c.isMesh) {
+                c.castShadow = true;
+                c.receiveShadow = false;
+            }
+        });
+        return clone;
+    }
+    // Fallback: procedural panda while FBX is loading
     const g = new THREE.Group();
     const bGeo = new THREE.SphereGeometry(0.048, 12, 12); bGeo.translate(0, 0.048, 0);
     const hGeo = new THREE.SphereGeometry(0.032, 12, 12); hGeo.translate(0, 0.114, 0);
@@ -99,8 +113,7 @@ function buildPanda() {
     g.add(new THREE.Mesh(bGeo, wMat), new THREE.Mesh(hGeo, wMat));
     for (const sx of [-1, 1]) {
         const eGeo = new THREE.SphereGeometry(0.013, 6, 6); eGeo.translate(sx * 0.029, 0.138, 0);
-        const eyGeo = new THREE.SphereGeometry(0.007, 5, 5); eyGeo.translate(sx * 0.014, 0.117, 0.028);
-        g.add(new THREE.Mesh(eGeo, bMat), new THREE.Mesh(eyGeo, bMat));
+        g.add(new THREE.Mesh(eGeo, bMat));
     }
     return g;
 }
@@ -292,6 +305,23 @@ function init() {
             setTimeout(() => btn.classList.remove('pressed'), 180);
         });
     });
+
+    // ── Preload panda FBX ─────────────────────────────────────────────────────
+    new FBXLoader().load(
+        'panda_try_3.fbx',
+        (fbx) => {
+            // Hide any helper/rig/camera objects that FBX may have exported
+            fbx.traverse(c => {
+                if (!c.isMesh && !c.isGroup && c !== fbx) c.visible = false;
+            });
+            fbx.scale.setScalar(0.0008);   // pandasquare1 is very large — scale down
+            fbx.updateMatrixWorld(true);
+            pandaFBXTemplate = fbx;
+            console.log('Panda FBX loaded ✅');
+        },
+        undefined,
+        (err) => console.warn('Could not load pandasquare1.fbx – using fallback geometry', err)
+    );
 
     // ── Window resize ─────────────────────────────────────────────────────────
     window.addEventListener('resize', () => {
