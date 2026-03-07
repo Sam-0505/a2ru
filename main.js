@@ -23,52 +23,53 @@ function init() {
     group = new THREE.Group();
     scene.add(group);
 
-    // --- HOLOGRAPHIC SPHERE DESIGN ---
+    // --- HOLOGRAPHIC PARTIAL SPHERE (CURVATURE OF EARTH) ---
 
-    // 1. Inner Core
-    const coreGeometry = new THREE.SphereGeometry(0.4, 32, 32);
-    const coreMaterial = new THREE.MeshStandardMaterial({
-        color: 0x00ffff,
-        emissive: 0x0088ff,
-        emissiveIntensity: 0.8,
-        roughness: 0.2,
-        metalness: 0.8
+    // A prominent partial sphere to represent the curvature of the earth
+    const earthRadius = 1.0;
+    // Create a dome/cap of the sphere (theta from 0 to about Pi/3)
+    const earthGeometry = new THREE.SphereGeometry(
+        earthRadius,
+        64,     // widthSegments (more for smoother curve)
+        32,     // heightSegments
+        0,      // phiStart
+        Math.PI * 2, // phiLength (full circle horizontally)
+        0,      // thetaStart (start from North Pole)
+        Math.PI / 2.5 // thetaLength (go down slightly past the "tropic")
+    );
+
+    // Offset the geometry so the curved surface sits nicely in the view center
+    earthGeometry.translate(0, -earthRadius, 0);
+
+    // Load a local texture that simulates barren land
+    const textureLoader = new THREE.TextureLoader();
+    const barrenMap = textureLoader.load('barren_earth_land.png');
+    barrenMap.colorSpace = THREE.SRGBColorSpace;
+    barrenMap.wrapS = THREE.RepeatWrapping;
+    barrenMap.wrapT = THREE.RepeatWrapping;
+    barrenMap.repeat.set(4, 4); // Repeat the texture to avoid stretching
+
+    // Map the texture onto the surface with bump mapping
+    const earthMaterial = new THREE.MeshStandardMaterial({
+        map: barrenMap,
+        bumpMap: barrenMap,
+        bumpScale: 0.5, // Increased for better crack depth
+        color: 0xffffff, // Real color of the image, removed brownish tint and blue colors
+        roughness: 0.9,
+        metalness: 0.1,
     });
-    const core = new THREE.Mesh(coreGeometry, coreMaterial);
-    group.add(core);
-
-    // 2. Middle Wireframe Shell
-    const shellGeometry = new THREE.SphereGeometry(0.6, 16, 16);
-    const shellMaterial = new THREE.MeshBasicMaterial({
-        color: 0xff00ff,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.6
-    });
-    const shell = new THREE.Mesh(shellGeometry, shellMaterial);
-    group.add(shell);
-
-    // 3. Outer Particle Orbit (Rings)
-    const ringGeometry = new THREE.TorusGeometry(0.8, 0.02, 16, 100);
-    const ringMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.8 });
-
-    const ring1 = new THREE.Mesh(ringGeometry, ringMaterial);
-    ring1.rotation.x = Math.PI / 2;
-    group.add(ring1);
-
-    const ring2 = new THREE.Mesh(ringGeometry, ringMaterial);
-    ring2.rotation.y = Math.PI / 2;
-    group.add(ring2);
+    const earthSlice = new THREE.Mesh(earthGeometry, earthMaterial);
+    group.add(earthSlice);
 
     // Add lighting
-    const ambientLight = new THREE.AmbientLight(0x222222);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5); // Increased ambient light for brightness
     scene.add(ambientLight);
 
-    const light1 = new THREE.PointLight(0xffffff, 2, 100);
+    const light1 = new THREE.PointLight(0xffffff, 10, 100); // Drastically increased intensity
     light1.position.set(5, 5, 5);
     scene.add(light1);
 
-    const light2 = new THREE.PointLight(0x00ffff, 2, 100);
+    const light2 = new THREE.PointLight(0xffddaa, 8, 100); // Stronger warm fill light
     light2.position.set(-5, -5, -5);
     scene.add(light2);
 
@@ -92,7 +93,9 @@ function init() {
         const settings = {
             cameraDistance: 4.0,
             centerGap: 0,
-            viewScale: 1.0
+            viewScale: 1.0,
+            textureScale: 4.0,
+            surfaceCurvature: Math.PI / 2.5
         };
 
         // Add control for camera distance which acts effectively as "cone size" 
@@ -109,6 +112,31 @@ function init() {
         // Control to change the size of each projection square
         guiControls.add(settings, 'viewScale', 0.5, 3.0).name('Projection Size').onChange((value) => {
             effect.viewScale = value;
+        });
+
+        // Control to change the texture scale
+        guiControls.add(settings, 'textureScale', 1.0, 20.0).name('Texture Scale').onChange((value) => {
+            barrenMap.repeat.set(value, value);
+        });
+
+        // Control to change the solid angle curvature of the terrain
+        guiControls.add(settings, 'surfaceCurvature', 0.1, Math.PI / 1.5).name('Curvature (Angle)').onChange((value) => {
+            // Dispose of the old geometry to prevent memory leaks
+            earthSlice.geometry.dispose();
+            // Recreate new geometry with the new theta length
+            const newGeo = new THREE.SphereGeometry(
+                earthRadius,
+                64,     // widthSegments
+                32,     // heightSegments
+                0,      // phiStart
+                Math.PI * 2, // phiLength
+                0,      // thetaStart
+                value   // thetaLength
+            );
+            // Re-apply the translation offset
+            newGeo.translate(0, -earthRadius, 0);
+            // Swap geometry
+            earthSlice.geometry = newGeo;
         });
     });
 
@@ -141,14 +169,10 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
 
-    // Rotate objects within the group for dynamic animation
-    const time = performance.now() * 0.001;
-
-    group.rotation.y = time * 0.5;
-    group.rotation.x = time * 0.2;
-    group.children[1].rotation.z = time * 0.3; // Rotate shell additionally
-    group.children[2].rotation.x = Math.PI / 2 + Math.sin(time) * 0.2; // Wobble ring 1
-    group.children[3].rotation.y = Math.PI / 2 + Math.cos(time) * 0.2; // Wobble ring 2
+    // Keep the group perfectly symmetric, with the curvature facing straight upwards
+    group.rotation.x = 0;
+    group.rotation.y = 0;
+    group.rotation.z = 0;
 
     effect.render(scene, camera);
 }
