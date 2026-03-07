@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { CustomPeppersGhostEffect } from './CustomPeppersGhostEffect.js';
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+
+// Variable counters 
+var treeTimer = 0;
+var houseTimer = 0;
+var factoryTimer = 0;
+var pandaTimer = 0;
+var fireBurnTimer = 0;
+const maxTreeCount = 25;
 
 // ─── ECOSYSTEM STATE ──────────────────────────────────────────────────────────
 const EARTH_RADIUS = 1.0;
@@ -18,7 +25,6 @@ const state = {
 
 let container, camera, scene, renderer, effect, group, earthSlice, barrenMap;
 let lastTime = 0;
-let pandaFBXTemplate = null;   // preloaded FBX, cloned per spawn
 
 init();
 animate();
@@ -93,18 +99,6 @@ function buildBamboo() {
 }
 
 function buildPanda() {
-    if (pandaFBXTemplate) {
-        const clone = pandaFBXTemplate.clone();
-        clone.scale.setScalar(0.0008);   // FBX is huge — scale way down
-        clone.traverse(c => {
-            if (c.isMesh) {
-                c.castShadow = true;
-                c.receiveShadow = false;
-            }
-        });
-        return clone;
-    }
-    // Fallback: procedural panda while FBX is loading
     const g = new THREE.Group();
     const bGeo = new THREE.SphereGeometry(0.048, 12, 12); bGeo.translate(0, 0.048, 0);
     const hGeo = new THREE.SphereGeometry(0.032, 12, 12); hGeo.translate(0, 0.114, 0);
@@ -113,7 +107,8 @@ function buildPanda() {
     g.add(new THREE.Mesh(bGeo, wMat), new THREE.Mesh(hGeo, wMat));
     for (const sx of [-1, 1]) {
         const eGeo = new THREE.SphereGeometry(0.013, 6, 6); eGeo.translate(sx * 0.029, 0.138, 0);
-        g.add(new THREE.Mesh(eGeo, bMat));
+        const eyGeo = new THREE.SphereGeometry(0.007, 5, 5); eyGeo.translate(sx * 0.014, 0.117, 0.028);
+        g.add(new THREE.Mesh(eGeo, bMat), new THREE.Mesh(eyGeo, bMat));
     }
     return g;
 }
@@ -179,17 +174,13 @@ function buildFire() {
 
 export function spawnByType(type) {
     switch (type) {
-        case 'bamboo':
-            spawnOnSurface(buildBamboo(), state.bamboo);
-            if (!state.isFireActive && state.factories.length < 3) {
-                setTimeout(() => spawnOnSurface(buildPanda(), state.pandas), 1500);
-            }
-            break;
+        case 'bamboo': spawnOnSurface(buildBamboo(), state.bamboo); break;
         case 'panda': spawnOnSurface(buildPanda(), state.pandas); break;
-        case 'tree': spawnOnSurface(buildTree(), state.trees); break;
+        case 'tree': if (state.trees.length < maxTreeCount) {spawnOnSurface(buildTree(), state.trees);}break;
         case 'house': spawnOnSurface(buildHouse(), state.houses); break;
         case 'factory': spawnOnSurface(buildFactory(), state.factories); break;
-        case 'human': spawnOnSurface(buildHuman(), state.humans); break;
+        case 'human': spawnOnSurface(buildHuman(), state.humans); // humans remove one tree when immedietly places
+        if (state.trees.length > 0) killLast(state.trees); break;
     }
     updateHUD();
 }
@@ -198,19 +189,34 @@ function triggerGlobalFire() {
     if (state.isFireActive) return;
     state.isFireActive = true;
     for (let i = 0; i < 18; i++) spawnOnSurface(buildFire(), state.fires);
-    showAlert('🔥 Forest fire ignited by climate change!', 'fire');
+    showAlert('Forest fire ignited by climate change!', 'fire');
     updateHUD();
 }
 
 function stopGlobalFire() {
     if (!state.isFireActive) return;
     state.isFireActive = false;
+
     while (state.fires.length) killLast(state.fires);
-    showAlert('💧 Fire extinguished! Trees will regrow.', 'safe');
+
+    // consume 10 humans to extinguish fire
+    for (let i = 0; i < 10; i++) {
+        if (state.humans.length > 0) killLast(state.humans);
+    }
+
+    showAlert('Fire extinguished! Trees will regrow.', 'safe');
+
     setTimeout(() => {
-        for (let i = 0; i < 6; i++)
-            setTimeout(() => spawnOnSurface(buildTree(), state.trees), i * 350);
+        const treesToRegrow = Math.min(6, maxTreeCount - state.trees.length);
+        for (let i = 0; i < treesToRegrow; i++) {
+            setTimeout(() => {
+                if (state.trees.length < maxTreeCount) {
+                    spawnOnSurface(buildTree(), state.trees);
+                }
+            }, i * 350);
+        }
     }, 1500);
+
     updateHUD();
 }
 
@@ -306,23 +312,6 @@ function init() {
         });
     });
 
-    // ── Preload panda FBX ─────────────────────────────────────────────────────
-    new FBXLoader().load(
-        'panda_try_3.fbx',
-        (fbx) => {
-            // Hide any helper/rig/camera objects that FBX may have exported
-            fbx.traverse(c => {
-                if (!c.isMesh && !c.isGroup && c !== fbx) c.visible = false;
-            });
-            fbx.scale.setScalar(0.0008);   // pandasquare1 is very large — scale down
-            fbx.updateMatrixWorld(true);
-            pandaFBXTemplate = fbx;
-            console.log('Panda FBX loaded ✅');
-        },
-        undefined,
-        (err) => console.warn('Could not load pandasquare1.fbx – using fallback geometry', err)
-    );
-
     // ── Window resize ─────────────────────────────────────────────────────────
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
@@ -358,41 +347,90 @@ function animate(time = 0) {
             obj.scale.lerp(obj.userData.targetScale, 0.06);
     });
 
-    // ── Ecosystem logic ───────────────────────────────────────────────────────
+        // ── Ecosystem logic ───────────────────────────────────────────────────────
     if (delta > 0) {
+
+        // fire starts at 5 factories
+        if (!state.isFireActive && state.factories.length >= 5) {
+            triggerGlobalFire();
+        }
+
+        // fire stops at 10 humans
+        if (state.isFireActive && state.humans.length >= 10) {
+            stopGlobalFire();
+        }
+
         if (state.isFireActive) {
-            // Flicker fire
             state.fires.forEach(f => {
                 f.userData.pulsePhase = (f.userData.pulsePhase || 0) + delta * 6;
                 f.scale.y = Math.max(0.3, 1 + Math.sin(f.userData.pulsePhase) * 0.3);
             });
-            // Destroy life randomly
-            if (Math.random() < 0.025) {
-                const pools = [state.bamboo, state.pandas, state.trees, state.houses];
-                killLast(pools[Math.floor(Math.random() * pools.length)]);
-                updateHUD();
-            }
-            // Humans extinguish fire
-            if (state.humans.length > 0 && Math.random() < state.humans.length * 0.015)
-                stopGlobalFire();
 
+            // burn everything gradually
+            fireBurnTimer += delta;
+            if (fireBurnTimer >= 0.3) {
+                fireBurnTimer = 0;
+
+                if (state.trees.length > 0) killLast(state.trees);
+                else if (state.bamboo.length > 0) killLast(state.bamboo);
+                else if (state.pandas.length > 0) killLast(state.pandas);
+                else if (state.houses.length > 0) killLast(state.houses);
+                else if (state.factories.length > 0) killLast(state.factories);
+            }
         } else {
-            // Panda seed spreading → tree growth
-            if (state.pandas.length > 0 && Math.random() < state.pandas.length * 0.005)
+            // tree multiplies: 1 tree every 3 seconds
+            if (state.trees.length > 0 && state.trees.length < maxTreeCount) {
+            treeTimer += delta;
+            if (treeTimer >= 3) {
+                treeTimer = 0;
                 spawnOnSurface(buildTree(), state.trees);
+            }
+        }
 
-            // Habitat loss → panda extinction
-            const infra = state.houses.length + state.factories.length;
-            if (infra >= state.extinctionThreshold && Math.random() < 0.012) {
-                killLast(state.pandas);
-                if (state.pandas.length === 0) showAlert('💀 Pandas went extinct from habitat loss!', 'fire');
-                updateHUD();
+            // human creates 1 house every 3 seconds
+            if (state.humans.length > 0) {
+                houseTimer += delta;
+                if (houseTimer >= 3) {
+                    houseTimer = 0;
+                    spawnOnSurface(buildHouse(), state.houses);
+                }
+            // human creates 1 factory every 10 seconds
+                factoryTimer += delta;
+                if (factoryTimer >= 10) {
+                    factoryTimer = 0;
+                    spawnOnSurface(buildFactory(), state.factories);
+                }
             }
 
-            // Climate change fire (≥5 factories)
-            if (state.factories.length >= 5 && Math.random() < 0.005)
-                triggerGlobalFire();
+            // When panda is placed: trees grow, and bamboo is consumed
+            if (state.pandas.length > 0) {
+                pandaTimer += delta;
+                if (pandaTimer >= 3) {
+                    pandaTimer = 0;
+
+                    // 1 tree per panda
+                    for (let i = 0; i < state.pandas.length; i++) {
+                    if (state.trees.length < maxTreeCount) {
+                        spawnOnSurface(buildTree(), state.trees);
+                    }
+                }
+                    // 1 bamboo per 2 pandas
+                    const bambooToRemove = Math.floor(state.pandas.length / 2);
+                    for (let i = 0; i < bambooToRemove; i++) {
+                        if (state.bamboo.length > 0) killLast(state.bamboo);
+                    }
+                }
+            }
         }
+
+        // If no bamboo, pandas disappear
+        if (state.bamboo.length === 0) {
+            while (state.pandas.length > 0) {
+                killLast(state.pandas);
+            }
+        }
+
+        updateHUD();
     }
 
     effect.render(scene, camera);
