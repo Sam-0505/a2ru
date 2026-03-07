@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PeppersGhostEffect } from 'three/addons/effects/PeppersGhostEffect.js';
+import { CustomPeppersGhostEffect } from './CustomPeppersGhostEffect.js';
 
 let container;
 let camera, scene, renderer, effect;
@@ -79,9 +79,39 @@ function init() {
     container.appendChild(renderer.domElement);
 
     // PeppersGhostEffect Setup
-    effect = new PeppersGhostEffect(renderer);
+    effect = new CustomPeppersGhostEffect(renderer);
     effect.setSize(window.innerWidth, window.innerHeight);
     effect.cameraDistance = 4; // Distance from the camera to the center of the hologram
+
+    // --- GUI SETUP ---
+    // Make gui globally available or create local
+    import('https://unpkg.com/three@0.160.0/examples/jsm/libs/lil-gui.module.min.js').then(({ GUI }) => {
+        const guiControls = new GUI();
+
+        // Settings object
+        const settings = {
+            cameraDistance: 4.0,
+            centerGap: 0,
+            viewScale: 1.0
+        };
+
+        // Add control for camera distance which acts effectively as "cone size" 
+        // by scaling how far the camera looks at the center.
+        guiControls.add(settings, 'cameraDistance', 1, 15).name('Hologram Distance').onChange((value) => {
+            effect.cameraDistance = value;
+        });
+
+        // Control to push the 4 squares further apart
+        guiControls.add(settings, 'centerGap', 0, 500).name('Spread Distance (px)').onChange((value) => {
+            effect.centerGap = value;
+        });
+
+        // Control to change the size of each projection square
+        guiControls.add(settings, 'viewScale', 0.5, 3.0).name('Projection Size').onChange((value) => {
+            effect.viewScale = value;
+        });
+    });
+
 
     // Event Listeners
     window.addEventListener('resize', onWindowResize);
