@@ -2,55 +2,37 @@ const express = require('express');
 const app = express();
 const http = require('http');
 const server = http.createServer(app);
-const { Server } = require("socket.io");
-const io = new Server(server, {
-    cors: {
-        origin: ["http://localhost:8000", "http://127.0.0.1:8000"],
-        methods: ["GET", "POST"]
-    }
-});
+const { Server } = require('socket.io');
 const path = require('path');
 
-// Serve static files from the 'public' directory
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Fallback to index.html for the main route
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+const io = new Server(server, {
+    cors: {
+        origin: ['http://localhost:8000', 'http://127.0.0.1:8000'],
+        methods: ['GET', 'POST']
+    }
 });
 
-// Socket.IO connection handling
+// Serve controller page from /public
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Socket.IO relay
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    console.log('Connected:', socket.id);
 
-    socket.on('add-object', (data) => {
-        console.log(`Received add-object: ${data.type}`);
-        socket.broadcast.emit('spawn-item', data);
-    });
+    // Controller → Simulation
+    socket.on('add-object', (d) => { socket.broadcast.emit('add-object', d); console.log('add-object:', d.type); });
+    socket.on('trigger-fire', () => { socket.broadcast.emit('trigger-fire'); console.log('trigger-fire'); });
+    socket.on('stop-fire', () => { socket.broadcast.emit('stop-fire'); console.log('stop-fire'); });
 
-    socket.on('trigger-fire', () => {
-        console.log('Fire triggered!');
-        socket.broadcast.emit('start-fire');
-    });
+    // Simulation → Controller  (state counts)
+    socket.on('state-update', (d) => { socket.broadcast.emit('state-update', d); });
 
-    socket.on('stop-fire', () => {
-        console.log('Fire stopped!');
-        socket.broadcast.emit('end-fire');
-    });
-
-    // Relay state updates from the simulation back to dashboard/control panel
-    socket.on('state-update', (data) => {
-        socket.broadcast.emit('state-update', data);
-    });
-
-    socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
-    });
+    socket.on('disconnect', () => console.log('Disconnected:', socket.id));
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`Server listening on *: ${PORT}`);
-    console.log(`Simulation Interface: http://localhost:${PORT}/`);
-    console.log(`Control Panel:        http://localhost:${PORT}/control.html`);
+    console.log(`\nNode backend   : http://localhost:${PORT}`);
+    console.log(`Controller page: http://localhost:${PORT}/control.html`);
+    console.log(`Simulation     : http://localhost:8000  (run: python -m http.server 8000)\n`);
 });

@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { CustomPeppersGhostEffect } from './CustomPeppersGhostEffect.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
+// ── Socket.IO — connect to backend on port 3000 ───────────────────────────────
+const socket = io('http://localhost:3000');
+socket.on('connect', () => console.log('[sim] connected to backend'));
+
+
 // ─── ECOSYSTEM STATE ──────────────────────────────────────────────────────────
 const EARTH_RADIUS = 1.0;
 const state = {
@@ -248,6 +253,9 @@ function init() {
     scene.background = new THREE.Color(0x000000);
 
     group = new THREE.Group();
+    // Shift group 'up' (which flips to 'down' towards the outer edges) 
+    // to give objects (the 'sky') more headroom before the center frame crops them.
+    group.position.y = 0.45; 
     scene.add(group);
 
     // ── Earth cap ─────────────────────────────────────────────────────────────
@@ -257,7 +265,7 @@ function init() {
     const loader = new THREE.TextureLoader();
     barrenMap = loader.load('barren_earth_land.png');
     barrenMap.colorSpace = THREE.SRGBColorSpace;
-    barrenMap.wrapS = barrenMap.wrapT = THREE.RepeatWrapping;
+    barrenMap.wrapS = barrenMap.wrapT = THREE.MirroredRepeatWrapping;
     barrenMap.repeat.set(4, 4);
 
     earthSlice = new THREE.Mesh(earthGeo, new THREE.MeshStandardMaterial({
@@ -306,14 +314,23 @@ function init() {
         });
     });
 
-    // ── Panel button listeners ────────────────────────────────────────────────
-    document.querySelectorAll('[data-spawn]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            spawnByType(btn.dataset.spawn);
-            btn.classList.add('pressed');
-            setTimeout(() => btn.classList.remove('pressed'), 180);
+    // ── Socket.IO event listeners ─────────────────────────────────────────────
+    socket.on('add-object', d => spawnByType(d.type));
+    socket.on('trigger-fire', () => triggerGlobalFire());
+    socket.on('stop-fire', () => stopGlobalFire());
+
+    // Broadcast live state to controller every 2 seconds
+    setInterval(() => {
+        socket.emit('state-update', {
+            pandas: state.pandas.length,
+            bamboo: state.bamboo.length,
+            trees: state.trees.length,
+            houses: state.houses.length,
+            factories: state.factories.length,
+            humans: state.humans.length,
+            fire: state.isFireActive
         });
-    });
+    }, 2000);
 
     // ── Preload panda FBX ─────────────────────────────────────────────────────
     new FBXLoader().load(

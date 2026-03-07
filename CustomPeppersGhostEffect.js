@@ -57,24 +57,29 @@ export class CustomPeppersGhostEffect {
             _cameraF.quaternion.copy(_quaternion);
             _cameraF.translateZ(scope.cameraDistance);
             _cameraF.lookAt(scene.position);
+            _cameraF.rotateZ(Math.PI); // Flip for reversed cone
 
             _cameraB.position.copy(_position);
             _cameraB.quaternion.copy(_quaternion);
             _cameraB.translateZ(-scope.cameraDistance);
             _cameraB.lookAt(scene.position);
             _cameraB.rotation.z += Math.PI;
+            _cameraB.rotateZ(Math.PI); // Flip for reversed cone
 
             _cameraL.position.copy(_position);
             _cameraL.quaternion.copy(_quaternion);
             _cameraL.translateX(-scope.cameraDistance);
             _cameraL.lookAt(scene.position);
             _cameraL.rotation.x += Math.PI / 2;
+            _cameraL.rotateZ(Math.PI); // Flip for reversed cone
 
             _cameraR.position.copy(_position);
             _cameraR.quaternion.copy(_quaternion);
             _cameraR.translateX(scope.cameraDistance);
             _cameraR.lookAt(scene.position);
             _cameraR.rotation.x += Math.PI / 2;
+            _cameraR.rotateZ(Math.PI); // Flip for reversed cone
+
 
             // ── Sync projection matrices ──────────────────────────────────────
             for (const cam of [_cameraF, _cameraB, _cameraL, _cameraR]) {

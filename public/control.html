@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ecosystem Controller</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: #0a0a12;
+            color: #eee;
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            gap: 14px;
+        }
+
+        /* ── Header ──────────────────────────────────────────────── */
+        header {
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 1.1rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            color: #aaffee;
+        }
+
+        header p {
+            font-size: 0.72rem;
+            color: #555;
+            margin-top: 3px;
+        }
+
+        /* ── Connection badge ────────────────────────────────────── */
+        #conn-badge {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 99px;
+            background: #1a1a26;
+            border: 1px solid #333;
+            color: #888;
+            margin-top: 6px;
+            transition: all 0.3s;
+        }
+
+        #conn-badge.connected {
+            border-color: #00ffc8;
+            color: #00ffc8;
+        }
+
+        /* ── Status bar ──────────────────────────────────────────── */
+        #status-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 12px;
+            padding: 10px 12px;
+        }
+
+        .stat-pill {
+            flex: 1;
+            min-width: 70px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 6px 4px;
+            font-size: 0.7rem;
+        }
+
+        .stat-pill .num {
+            font-size: 1.1rem;
+            font-weight: 800;
+            display: block;
+            color: #fff;
+        }
+
+        .stat-pill.fire-on .num {
+            color: #FF5722;
+        }
+
+        /* ── Section label ───────────────────────────────────────── */
+        .section-label {
+            font-size: 0.6rem;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: #555;
+            padding: 0 2px;
+        }
+
+        /* ── Spawn grid ──────────────────────────────────────────── */
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+        }
+
+        .spawn-btn {
+            background: rgba(20, 20, 34, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 14px 8px 10px;
+            color: #ddd;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.72rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            transition: transform 0.1s, background 0.2s, box-shadow 0.2s;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        .spawn-btn .icon {
+            font-size: 1.8rem;
+            line-height: 1;
+        }
+
+        .spawn-btn:active,
+        .spawn-btn.pressed {
+            transform: scale(0.92);
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .spawn-btn.bamboo {
+            border-bottom: 3px solid #8BC34A;
+        }
+
+        .spawn-btn.panda {
+            border-bottom: 3px solid #e0e0e0;
+        }
+
+        .spawn-btn.tree {
+            border-bottom: 3px solid #2E7D32;
+        }
+
+        .spawn-btn.house {
+            border-bottom: 3px solid #FFA726;
+        }
+
+        .spawn-btn.factory {
+            border-bottom: 3px solid #ef5350;
+        }
+
+        .spawn-btn.human {
+            border-bottom: 3px solid #42A5F5;
+        }
+
+        /* ── Action buttons (fire) ───────────────────────────────── */
+        .action-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .action-btn {
+            padding: 14px 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(20, 20, 34, 0.85);
+            color: #ddd;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: transform 0.1s, background 0.2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .action-btn:active {
+            transform: scale(0.93);
+        }
+
+        #btn-fire {
+            border-bottom: 3px solid #FF5722;
+        }
+
+        #btn-stop-fire {
+            border-bottom: 3px solid #42A5F5;
+        }
+
+        /* ── Rules card ──────────────────────────────────────────── */
+        .rules-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 0.7rem;
+            line-height: 1.9;
+            color: #666;
+        }
+
+        .rules-card strong {
+            color: #aaa;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>🌍 Ecosystem Controller</h1>
+        <p>Controls the holographic simulation</p>
+        <span id="conn-badge">● Connecting…</span>
+    </header>
+
+    <!-- Live status from simulation -->
+    <div id="status-bar">
+        <div class="stat-pill">🎋<span class="num" id="s-bamboo">–</span>Bamboo</div>
+        <div class="stat-pill">🐼<span class="num" id="s-pandas">–</span>Pandas</div>
+        <div class="stat-pill">🌲<span class="num" id="s-trees">–</span>Trees</div>
+        <div class="stat-pill">🏠<span class="num" id="s-houses">–</span>Houses</div>
+        <div class="stat-pill">🏭<span class="num" id="s-factories">–</span>Factories</div>
+        <div class="stat-pill">🧑<span class="num" id="s-humans">–</span>Humans</div>
+        <div class="stat-pill" id="s-fire-pill">🔥<span class="num" id="s-fire">–</span>Fire</div>
+    </div>
+
+    <div class="section-label">Add to Simulation</div>
+
+    <!-- Spawn buttons -->
+    <div class="btn-grid">
+        <button class="spawn-btn bamboo" data-type="bamboo"> <span class="icon">🎋</span>Bamboo</button>
+        <button class="spawn-btn panda" data-type="panda"> <span class="icon">🐼</span>Panda</button>
+        <button class="spawn-btn tree" data-type="tree"> <span class="icon">🌲</span>Tree</button>
+        <button class="spawn-btn house" data-type="house"> <span class="icon">🏠</span>House</button>
+        <button class="spawn-btn factory" data-type="factory"> <span class="icon">🏭</span>Factory</button>
+        <button class="spawn-btn human" data-type="human"> <span class="icon">🧑</span>Human</button>
+    </div>
+
+    <div class="section-label">Fire Control</div>
+
+    <!-- Fire actions -->
+    <div class="action-grid">
+        <button class="action-btn" id="btn-fire"> 🔥 Trigger Fire</button>
+        <button class="action-btn" id="btn-stop-fire"> 💧 Stop Fire</button>
+    </div>
+
+    <!-- Rules summary -->
+    <div class="rules-card">
+        <strong>🎋 Bamboo →</strong> Panda spawns after 1.5s (if &lt;3 structures &amp; no fire)<br>
+        <strong>🐼 Pandas →</strong> Spread seeds, grow trees over time<br>
+        <strong>🏠🏭 ≥3 structures →</strong> Pandas slowly go extinct<br>
+        <strong>🏭 ≥5 Factories →</strong> Forest fire auto-triggers<br>
+        <strong>🔥 Fire →</strong> Destroys life each frame<br>
+        <strong>🧑 Humans →</strong> Extinguish fire over time<br>
+        <strong>After fire →</strong> 6 trees auto-regrow
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const badge = document.getElementById('conn-badge');
+
+        socket.on('connect', () => { badge.textContent = '● Connected'; badge.classList.add('connected'); });
+        socket.on('disconnect', () => { badge.textContent = '● Disconnected'; badge.classList.remove('connected'); });
+
+        // Live state updates from simulation
+        socket.on('state-update', (d) => {
+            document.getElementById('s-bamboo').textContent = d.bamboo ?? '–';
+            document.getElementById('s-pandas').textContent = d.pandas ?? '–';
+            document.getElementById('s-trees').textContent = d.trees ?? '–';
+            document.getElementById('s-houses').textContent = d.houses ?? '–';
+            document.getElementById('s-factories').textContent = d.factories ?? '–';
+            document.getElementById('s-humans').textContent = d.humans ?? '–';
+            const firePill = document.getElementById('s-fire-pill');
+            document.getElementById('s-fire').textContent = d.fire ? 'ON' : 'OFF';
+            firePill.classList.toggle('fire-on', !!d.fire);
+        });
+
+        // Spawn buttons
+        document.querySelectorAll('[data-type]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                socket.emit('add-object', { type: btn.dataset.type });
+                btn.classList.add('pressed');
+                setTimeout(() => btn.classList.remove('pressed'), 180);
+            });
+        });
+
+        // Fire controls
+        document.getElementById('btn-fire').addEventListener('click', () => socket.emit('trigger-fire'));
+        document.getElementById('btn-stop-fire').addEventListener('click', () => socket.emit('stop-fire'));
+    </script>
+</body>
+
+</html>
