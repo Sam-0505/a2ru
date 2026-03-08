@@ -31,8 +31,18 @@ animate();
 // ─── SURFACE HELPERS ─────────────────────────────────────────────────────────
 
 function randomSurfacePoint() {
-    const theta = Math.random() * (Math.PI / 3.2);
-    const phi = Math.random() * Math.PI * 2;
+    return surfacePointFrom2D(
+        (Math.random() - 0.5) * 2 * 0.9, // random x between -0.9 and 0.9
+        (Math.random() - 0.5) * 2 * 0.9  // random y between -0.9 and 0.9
+    );
+}
+
+function surfacePointFrom2D(nx, ny) {
+    // Distance from center, capped at 1.0 (the edge of the dome)
+    const r = Math.min(Math.sqrt(nx * nx + ny * ny), 1.0);
+    // map to theta up to max angle PI/2.5
+    const theta = r * (Math.PI / 2.5);
+    const phi = Math.atan2(ny, nx);
     return {
         pos: new THREE.Vector3(
             EARTH_RADIUS * Math.sin(theta) * Math.cos(phi),
@@ -47,8 +57,8 @@ function randomSurfacePoint() {
     };
 }
 
-function spawnOnSurface(mesh, stateArray) {
-    const { pos, normal } = randomSurfacePoint();
+function spawnOnSurface(mesh, stateArray, coords = null) {
+    const { pos, normal } = coords ? surfacePointFrom2D(coords.x, coords.y) : randomSurfacePoint();
     mesh.position.copy(pos);
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
     mesh.userData.targetScale = new THREE.Vector3(1, 1, 1);
@@ -182,19 +192,19 @@ function buildFire() {
 
 // ─── ECOSYSTEM ACTIONS ────────────────────────────────────────────────────────
 
-export function spawnByType(type) {
+export function spawnByType(type, coords = null) {
     switch (type) {
         case 'bamboo':
-            spawnOnSurface(buildBamboo(), state.bamboo);
+            spawnOnSurface(buildBamboo(), state.bamboo, coords);
             if (!state.isFireActive && state.factories.length < 3) {
-                setTimeout(() => spawnOnSurface(buildPanda(), state.pandas), 1500);
+                setTimeout(() => spawnOnSurface(buildPanda(), state.pandas, coords), 1500);
             }
             break;
-        case 'panda': spawnOnSurface(buildPanda(), state.pandas); break;
-        case 'tree': spawnOnSurface(buildTree(), state.trees); break;
-        case 'house': spawnOnSurface(buildHouse(), state.houses); break;
-        case 'factory': spawnOnSurface(buildFactory(), state.factories); break;
-        case 'human': spawnOnSurface(buildHuman(), state.humans); break;
+        case 'panda': spawnOnSurface(buildPanda(), state.pandas, coords); break;
+        case 'tree': spawnOnSurface(buildTree(), state.trees, coords); break;
+        case 'house': spawnOnSurface(buildHouse(), state.houses, coords); break;
+        case 'factory': spawnOnSurface(buildFactory(), state.factories, coords); break;
+        case 'human': spawnOnSurface(buildHuman(), state.humans, coords); break;
     }
     updateHUD();
 }
@@ -255,7 +265,7 @@ function init() {
     group = new THREE.Group();
     // Shift group 'up' (which flips to 'down' towards the outer edges) 
     // to give objects (the 'sky') more headroom before the center frame crops them.
-    group.position.y = 0.45; 
+    group.position.y = 0.45;
     scene.add(group);
 
     // ── Earth cap ─────────────────────────────────────────────────────────────
@@ -264,7 +274,7 @@ function init() {
 
     const earthMat = new THREE.MeshStandardMaterial({
         color: 0x5D4037, // Fallback base brown
-        roughness: 1.0, 
+        roughness: 1.0,
         metalness: 0.0
     });
 
@@ -386,31 +396,26 @@ function init() {
         earthSlice.geometry = cg;
     }
 
-    // ── GUI (lil-gui) ─────────────────────────────────────────────────────────
-    import('https://unpkg.com/three@0.160.0/examples/jsm/libs/lil-gui.module.min.js').then(({ GUI }) => {
-        const gui = new GUI({ title: 'Display Controls' });
-        const s = { cameraDistance: 2.3, spreadDistance: 141, projectionSize: 1.45, noiseScale: 15.0, curvature: 1.162732 };
-        gui.add(s, 'cameraDistance', 1, 15, 0.1).name('Hologram Distance').onChange(v => effect.cameraDistance = v);
-        gui.add(s, 'spreadDistance', 0, 300, 1).name('Spread Distance (px)').onChange(v => effect.centerGap = v);
-        gui.add(s, 'projectionSize', 0.3, 3, 0.05).name('Projection Size').onChange(v => effect.viewScale = v);
-        gui.add(s, 'noiseScale', 1, 50, 0.5).name('Noise Scale').onChange(v => {
-            if (earthSlice.material.userData.shader) {
-                earthSlice.material.userData.shader.uniforms.noiseScale.value = v;
-            }
-        });
-        gui.add(s, 'curvature', 0.1, Math.PI / 1.5).name('Curvature').onChange(v => {
-            earthSlice.geometry.dispose();
-            const g = new THREE.SphereGeometry(EARTH_RADIUS, 64, 32, 0, Math.PI * 2, 0, v);
-            g.translate(0, -EARTH_RADIUS, 0);
-            earthSlice.geometry = g;
-        });
-    });
-
     // ── Socket.IO event listeners ─────────────────────────────────────────────
-    socket.on('add-object', d => spawnByType(d.type));
+    socket.on('add-object', d => spawnByType(d.type, d.coords));
     socket.on('trigger-fire', () => triggerGlobalFire());
     socket.on('stop-fire', () => stopGlobalFire());
 
+    // Display controls remotely from controller
+    socket.on('update-display', d => {
+        if (d.cameraDistance !== undefined) effect.cameraDistance = d.cameraDistance;
+        if (d.spreadDistance !== undefined) effect.centerGap = d.spreadDistance;
+        if (d.projectionSize !== undefined) effect.viewScale = d.projectionSize;
+        if (d.noiseScale !== undefined && earthSlice.material.userData.shader) {
+            earthSlice.material.userData.shader.uniforms.noiseScale.value = d.noiseScale;
+        }
+        if (d.curvature !== undefined) {
+            earthSlice.geometry.dispose();
+            const g = new THREE.SphereGeometry(EARTH_RADIUS, 64, 32, 0, Math.PI * 2, 0, d.curvature);
+            g.translate(0, -EARTH_RADIUS, 0);
+            earthSlice.geometry = g;
+        }
+    });
     // Broadcast live state to controller every 2 seconds
     setInterval(() => {
         socket.emit('state-update', {

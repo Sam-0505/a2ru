@@ -23,6 +23,7 @@ io.on('connection', (socket) => {
     socket.on('add-object', (d) => { socket.broadcast.emit('add-object', d); console.log('add-object:', d.type); });
     socket.on('trigger-fire', () => { socket.broadcast.emit('trigger-fire'); console.log('trigger-fire'); });
     socket.on('stop-fire', () => { socket.broadcast.emit('stop-fire'); console.log('stop-fire'); });
+    socket.on('update-display', (d) => { socket.broadcast.emit('update-display', d); });
 
     // Simulation → Controller  (state counts)
     socket.on('state-update', (d) => { socket.broadcast.emit('state-update', d); });

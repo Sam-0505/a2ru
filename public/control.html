@@ -1,17 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ecosystem Controller</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             background: #0a0a12;
@@ -25,24 +20,10 @@
         }
 
         /* ── Header ──────────────────────────────────────────────── */
-        header {
-            text-align: center;
-        }
+        header { text-align: center; }
+        header h1 { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.08em; color: #aaffee; }
+        header p  { font-size: 0.72rem; color: #555; margin-top: 3px; }
 
-        header h1 {
-            font-size: 1.1rem;
-            font-weight: 800;
-            letter-spacing: 0.08em;
-            color: #aaffee;
-        }
-
-        header p {
-            font-size: 0.72rem;
-            color: #555;
-            margin-top: 3px;
-        }
-
-        /* ── Connection badge ────────────────────────────────────── */
         #conn-badge {
             display: inline-block;
             font-size: 0.65rem;
@@ -55,217 +36,205 @@
             margin-top: 6px;
             transition: all 0.3s;
         }
-
-        #conn-badge.connected {
-            border-color: #00ffc8;
-            color: #00ffc8;
-        }
+        #conn-badge.connected { border-color: #00ffc8; color: #00ffc8; }
 
         /* ── Status bar ──────────────────────────────────────────── */
         #status-bar {
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.07);
             border-radius: 12px;
             padding: 10px 12px;
         }
-
         .stat-pill {
-            flex: 1;
-            min-width: 70px;
-            text-align: center;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-            padding: 6px 4px;
-            font-size: 0.7rem;
+            flex: 1; min-width: 60px; text-align: center;
+            background: rgba(255,255,255,0.05); border-radius: 8px; padding: 6px 4px; font-size: 0.65rem;
         }
+        .stat-pill .num { font-size: 1.1rem; font-weight: 800; display: block; color: #fff; }
+        .stat-pill.fire-on .num { color: #FF5722; }
 
-        .stat-pill .num {
-            font-size: 1.1rem;
-            font-weight: 800;
-            display: block;
-            color: #fff;
-        }
-
-        .stat-pill.fire-on .num {
-            color: #FF5722;
-        }
-
-        /* ── Section label ───────────────────────────────────────── */
         .section-label {
-            font-size: 0.6rem;
-            font-weight: 700;
-            letter-spacing: 0.14em;
-            text-transform: uppercase;
-            color: #555;
-            padding: 0 2px;
+            font-size: 0.6rem; font-weight: 700; letter-spacing: 0.14em;
+            text-transform: uppercase; color: #555; padding: 0 2px; margin-top: 5px;
         }
 
-        /* ── Spawn grid ──────────────────────────────────────────── */
+        /* ── Main Layout: Map + Tools ────────────────────────────── */
+        .workspace {
+            display: flex; gap: 14px; flex-direction: column;
+        }
+        @media (min-width: 600px) { .workspace { flex-direction: row; } }
+
+        /* ── Tool Selection ──────────────────────────────────────── */
+        .tools-panel { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+        
         .btn-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 8px;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
         }
-
         .spawn-btn {
             background: rgba(20, 20, 34, 0.85);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 12px;
-            padding: 14px 8px 10px;
-            color: #ddd;
-            font-family: 'Inter', sans-serif;
-            font-size: 0.72rem;
-            font-weight: 600;
-            cursor: pointer;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 6px;
-            transition: transform 0.1s, background 0.2s, box-shadow 0.2s;
-            -webkit-tap-highlight-color: transparent;
-            user-select: none;
+            border: 2px solid rgba(255,255,255,0.08); /* thicker border for selection */
+            border-radius: 12px; padding: 10px 4px 8px; color: #ddd;
+            font-family: inherit; font-size: 0.72rem; font-weight: 600;
+            cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;
+            transition: all 0.2s; -webkit-tap-highlight-color: transparent;
         }
+        .spawn-btn .icon { font-size: 1.6rem; line-height: 1; }
+        
+        /* Active tool state */
+        .spawn-btn.active { background: rgba(0, 255, 200, 0.15); border-color: #00ffc8; color: #fff; transform: scale(0.96); box-shadow: 0 0 10px rgba(0,255,200,0.3); }
 
-        .spawn-btn .icon {
-            font-size: 1.8rem;
-            line-height: 1;
+        .spawn-btn.bamboo  { border-bottom-color: #8BC34A; }
+        .spawn-btn.panda   { border-bottom-color: #e0e0e0; }
+        .spawn-btn.tree    { border-bottom-color: #2E7D32; }
+        .spawn-btn.house   { border-bottom-color: #FFA726; }
+        .spawn-btn.factory { border-bottom-color: #ef5350; }
+        .spawn-btn.human   { border-bottom-color: #42A5F5; }
+
+        /* active overrides the bottom color to match selection */
+        .spawn-btn.active.bamboo { border-color: #8BC34A; }
+        .spawn-btn.active.panda { border-color: #e0e0e0; }
+        .spawn-btn.active.tree { border-color: #2E7D32; }
+        .spawn-btn.active.house { border-color: #FFA726; }
+        .spawn-btn.active.factory { border-color: #ef5350; }
+        .spawn-btn.active.human { border-color: #42A5F5; }
+
+        /* ── Minimap ─────────────────────────────────────────────── */
+        .map-panel {
+            flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px;
         }
-
-        .spawn-btn:active,
-        .spawn-btn.pressed {
-            transform: scale(0.92);
-            background: rgba(255, 255, 255, 0.12);
+        #minimap {
+            width: 260px; height: 260px;
+            border-radius: 50%;
+            background: radial-gradient(circle at center, #5D4037 0%, #3E2723 100%);
+            border: 2px solid #555;
+            position: relative;
+            cursor: crosshair;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+            overflow: hidden;
+            touch-action: none;
         }
-
-        .spawn-btn.bamboo {
-            border-bottom: 3px solid #8BC34A;
+        #minimap::after {
+            content: '';
+            position: absolute; top: 50%; left: 0; width: 100%; height: 1px; background: rgba(255,255,255,0.1);
         }
-
-        .spawn-btn.panda {
-            border-bottom: 3px solid #e0e0e0;
+        #minimap::before {
+            content: '';
+            position: absolute; top: 0; left: 50%; width: 1px; height: 100%; background: rgba(255,255,255,0.1);
         }
+        .map-hint { font-size: 0.65rem; color: #888; text-align: center; }
 
-        .spawn-btn.tree {
-            border-bottom: 3px solid #2E7D32;
+        .blip {
+            position: absolute;
+            width: 8px; height: 8px;
+            background: #fff; border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            animation: fadeout 1s forwards;
+            box-shadow: 0 0 6px #fff;
         }
+        @keyframes fadeout { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.5); } }
 
-        .spawn-btn.house {
-            border-bottom: 3px solid #FFA726;
+        /* ── Display Sliders ─────────────────────────────────────── */
+        .sliders-card {
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
         }
-
-        .spawn-btn.factory {
-            border-bottom: 3px solid #ef5350;
+        .slider-row {
+            display: flex; align-items: center; gap: 10px; font-size: 0.75rem;
         }
-
-        .spawn-btn.human {
-            border-bottom: 3px solid #42A5F5;
+        .slider-row label { flex: 1; color: #ccc; }
+        .slider-row input[type=range] { flex: 2; height: 4px; appearance: none; background: #333; border-radius: 2px; outline: none; }
+        .slider-row input[type=range]::-webkit-slider-thumb {
+            appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #00ffc8; cursor: pointer;
         }
+        .slider-val { width: 30px; text-align: right; font-family: monospace; color: #00ffc8; }
 
-        /* ── Action buttons (fire) ───────────────────────────────── */
-        .action-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-
+        /* ── Fire Controls ───────────────────────────────────────── */
+        .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .action-btn {
-            padding: 14px 10px;
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            background: rgba(20, 20, 34, 0.85);
-            color: #ddd;
-            font-family: 'Inter', sans-serif;
-            font-size: 0.82rem;
-            font-weight: 700;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            transition: transform 0.1s, background 0.2s;
-            -webkit-tap-highlight-color: transparent;
+            padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(20,20,34,0.85);
+            color: #ddd; font-family: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer;
+            transition: transform 0.1s; -webkit-tap-highlight-color: transparent;
         }
+        .action-btn:active { transform: scale(0.93); }
+        #btn-fire { border-bottom: 3px solid #FF5722; }
+        #btn-stop-fire { border-bottom: 3px solid #42A5F5; }
 
-        .action-btn:active {
-            transform: scale(0.93);
-        }
-
-        #btn-fire {
-            border-bottom: 3px solid #FF5722;
-        }
-
-        #btn-stop-fire {
-            border-bottom: 3px solid #42A5F5;
-        }
-
-        /* ── Rules card ──────────────────────────────────────────── */
-        .rules-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 12px;
-            padding: 12px 14px;
-            font-size: 0.7rem;
-            line-height: 1.9;
-            color: #666;
-        }
-
-        .rules-card strong {
-            color: #aaa;
-        }
     </style>
 </head>
-
 <body>
 
     <header>
         <h1>🌍 Ecosystem Controller</h1>
-        <p>Controls the holographic simulation</p>
+        <p>Select a tool, then tap the map to place it</p>
         <span id="conn-badge">● Connecting…</span>
     </header>
 
-    <!-- Live status from simulation -->
     <div id="status-bar">
-        <div class="stat-pill">🎋<span class="num" id="s-bamboo">–</span>Bamboo</div>
-        <div class="stat-pill">🐼<span class="num" id="s-pandas">–</span>Pandas</div>
-        <div class="stat-pill">🌲<span class="num" id="s-trees">–</span>Trees</div>
-        <div class="stat-pill">🏠<span class="num" id="s-houses">–</span>Houses</div>
-        <div class="stat-pill">🏭<span class="num" id="s-factories">–</span>Factories</div>
-        <div class="stat-pill">🧑<span class="num" id="s-humans">–</span>Humans</div>
-        <div class="stat-pill" id="s-fire-pill">🔥<span class="num" id="s-fire">–</span>Fire</div>
+        <div class="stat-pill">🎋<span class="num" id="s-bamboo">–</span></div>
+        <div class="stat-pill">🐼<span class="num" id="s-pandas">–</span></div>
+        <div class="stat-pill">🌲<span class="num" id="s-trees">–</span></div>
+        <div class="stat-pill">🏠<span class="num" id="s-houses">–</span></div>
+        <div class="stat-pill">🏭<span class="num" id="s-factories">–</span></div>
+        <div class="stat-pill">🧑<span class="num" id="s-humans">–</span></div>
+        <div class="stat-pill" id="s-fire-pill">🔥<span class="num" id="s-fire">–</span></div>
     </div>
 
-    <div class="section-label">Add to Simulation</div>
+    <div class="workspace">
+        <div class="tools-panel">
+            <div class="section-label">Active Tool</div>
+            <div class="btn-grid">
+                <button class="spawn-btn bamboo active" data-type="bamboo"> <span class="icon">🎋</span>Bamboo</button>
+                <button class="spawn-btn panda" data-type="panda"> <span class="icon">🐼</span>Panda</button>
+                <button class="spawn-btn tree" data-type="tree"> <span class="icon">🌲</span>Tree</button>
+                <button class="spawn-btn house" data-type="house"> <span class="icon">🏠</span>House</button>
+                <button class="spawn-btn factory" data-type="factory"> <span class="icon">🏭</span>Factory</button>
+                <button class="spawn-btn human" data-type="human"> <span class="icon">🧑</span>Human</button>
+            </div>
+            
+            <div class="section-label">Fire Control</div>
+            <div class="action-grid">
+                <button class="action-btn" id="btn-fire">🔥 Ignite</button>
+                <button class="action-btn" id="btn-stop-fire">💧 Extinguish</button>
+            </div>
+        </div>
 
-    <!-- Spawn buttons -->
-    <div class="btn-grid">
-        <button class="spawn-btn bamboo" data-type="bamboo"> <span class="icon">🎋</span>Bamboo</button>
-        <button class="spawn-btn panda" data-type="panda"> <span class="icon">🐼</span>Panda</button>
-        <button class="spawn-btn tree" data-type="tree"> <span class="icon">🌲</span>Tree</button>
-        <button class="spawn-btn house" data-type="house"> <span class="icon">🏠</span>House</button>
-        <button class="spawn-btn factory" data-type="factory"> <span class="icon">🏭</span>Factory</button>
-        <button class="spawn-btn human" data-type="human"> <span class="icon">🧑</span>Human</button>
+        <div class="map-panel">
+            <div class="section-label">Top-Down Map</div>
+            <div id="minimap"></div>
+            <div class="map-hint">Tap inside the circle to spawn the active tool</div>
+        </div>
     </div>
 
-    <div class="section-label">Fire Control</div>
-
-    <!-- Fire actions -->
-    <div class="action-grid">
-        <button class="action-btn" id="btn-fire"> 🔥 Trigger Fire</button>
-        <button class="action-btn" id="btn-stop-fire"> 💧 Stop Fire</button>
-    </div>
-
-    <!-- Rules summary -->
-    <div class="rules-card">
-        <strong>🎋 Bamboo →</strong> Panda spawns after 1.5s (if &lt;3 structures &amp; no fire)<br>
-        <strong>🐼 Pandas →</strong> Spread seeds, grow trees over time<br>
-        <strong>🏠🏭 ≥3 structures →</strong> Pandas slowly go extinct<br>
-        <strong>🏭 ≥5 Factories →</strong> Forest fire auto-triggers<br>
-        <strong>🔥 Fire →</strong> Destroys life each frame<br>
-        <strong>🧑 Humans →</strong> Extinguish fire over time<br>
-        <strong>After fire →</strong> 6 trees auto-regrow
+    <div class="section-label">Display Controls</div>
+    <div class="sliders-card">
+        <div class="slider-row">
+            <label>Hologram Dist</label>
+            <input type="range" id="sl-cam" min="1" max="15" step="0.1" value="2.3">
+            <div class="slider-val" id="val-cam">2.3</div>
+        </div>
+        <div class="slider-row">
+            <label>Spread Dist</label>
+            <input type="range" id="sl-spread" min="0" max="300" step="1" value="141">
+            <div class="slider-val" id="val-spread">141</div>
+        </div>
+        <div class="slider-row">
+            <label>Projection Size</label>
+            <input type="range" id="sl-proj" min="0.3" max="3" step="0.05" value="1.45">
+            <div class="slider-val" id="val-proj">1.45</div>
+        </div>
+        <div class="slider-row">
+            <label>Noise Scale</label>
+            <input type="range" id="sl-noise" min="1" max="50" step="0.5" value="15.0">
+            <div class="slider-val" id="val-noise">15.0</div>
+        </div>
+        <div class="slider-row">
+            <label>Curvature</label>
+            <input type="range" id="sl-curve" min="0.1" max="2.09" step="0.01" value="1.16">
+            <div class="slider-val" id="val-curve">1.16</div>
+        </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -276,7 +245,7 @@
         socket.on('connect', () => { badge.textContent = '● Connected'; badge.classList.add('connected'); });
         socket.on('disconnect', () => { badge.textContent = '● Disconnected'; badge.classList.remove('connected'); });
 
-        // Live state updates from simulation
+        // Update counts
         socket.on('state-update', (d) => {
             document.getElementById('s-bamboo').textContent = d.bamboo ?? '–';
             document.getElementById('s-pandas').textContent = d.pandas ?? '–';
@@ -289,19 +258,66 @@
             firePill.classList.toggle('fire-on', !!d.fire);
         });
 
-        // Spawn buttons
-        document.querySelectorAll('[data-type]').forEach(btn => {
+        // Tool Selection
+        let activeTool = 'bamboo';
+        document.querySelectorAll('.spawn-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                socket.emit('add-object', { type: btn.dataset.type });
-                btn.classList.add('pressed');
-                setTimeout(() => btn.classList.remove('pressed'), 180);
+                document.querySelectorAll('.spawn-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                activeTool = btn.dataset.type;
             });
+        });
+
+        // Minimap Spawning
+        const minimap = document.getElementById('minimap');
+        minimap.addEventListener('pointerdown', (e) => {
+            const rect = minimap.getBoundingClientRect();
+            // Get local x,y relative to center
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Normalize to [-1, 1] where center is 0,0
+            const nx = (x / rect.width) * 2 - 1;
+            const ny = (y / rect.height) * 2 - 1;
+
+            // Constrain to circle
+            if (nx * nx + ny * ny > 1.0) return;
+
+            // Emit spawn command with coordinates
+            socket.emit('add-object', { type: activeTool, coords: { x: nx, y: ny } });
+
+            // Visual feedback blip
+            const blip = document.createElement('div');
+            blip.className = 'blip';
+            blip.style.left = x + 'px';
+            blip.style.top = y + 'px';
+            minimap.appendChild(blip);
+            setTimeout(() => minimap.removeChild(blip), 1000);
         });
 
         // Fire controls
         document.getElementById('btn-fire').addEventListener('click', () => socket.emit('trigger-fire'));
         document.getElementById('btn-stop-fire').addEventListener('click', () => socket.emit('stop-fire'));
+
+        // Display Settings Sliders
+        const sendDisplayUpdate = () => {
+            socket.emit('update-display', {
+                cameraDistance: parseFloat(document.getElementById('sl-cam').value),
+                spreadDistance: parseFloat(document.getElementById('sl-spread').value),
+                projectionSize: parseFloat(document.getElementById('sl-proj').value),
+                noiseScale: parseFloat(document.getElementById('sl-noise').value),
+                curvature: parseFloat(document.getElementById('sl-curve').value)
+            });
+        };
+
+        ['cam', 'spread', 'proj', 'noise', 'curve'].forEach(id => {
+            const el = document.getElementById('sl-' + id);
+            const valEl = document.getElementById('val-' + id);
+            el.addEventListener('input', () => {
+                valEl.textContent = el.value;
+                sendDisplayUpdate();
+            });
+        });
     </script>
 </body>
-
 </html>
