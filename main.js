@@ -3,7 +3,7 @@ import { CustomPeppersGhostEffect } from './CustomPeppersGhostEffect.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 // ── Socket.IO — connect to backend on port 3000 ───────────────────────────────
-const socket = io('http://172.22.34.78:3000');
+const socket = io('http://10.49.246.13:3000');
 socket.on('connect', () => console.log('[sim] connected to backend'));
 
 
@@ -609,7 +609,7 @@ function animate(time = 0) {
     pandaTimer += delta;
     if (pandaTimer >= 3) {
         pandaTimer = 0;
-
+        
         // 1 tree per panda
         for (let i = 0; i < state.pandas.length; i++) {
             if (state.trees.length < maxTreeCount) {
@@ -628,6 +628,7 @@ function animate(time = 0) {
             if (state.bamboo.length > 0) killLast(state.bamboo);
         }
 
+        
         // breeding: if 2 or more pandas, make 1 new panda
         if (state.pandas.length >= 2 && state.bamboo.length > 0) {
             const parentPanda = state.pandas[Math.floor(Math.random() * state.pandas.length)];
@@ -638,21 +639,19 @@ function animate(time = 0) {
             );
         }
     }
-}
 
-if (state.bamboo.length === 0 && state.pandas.length > 0) {
-    pandaStarveTimer += delta;
+    if (state.bamboo.length === 0 && state.pandas.length > 0) {
+        pandaStarveTimer += delta;
 
-    if (pandaStarveTimer >= 3) {
+        if (pandaStarveTimer >= 3) {
+            pandaStarveTimer = 0;
+            killLast(state.pandas);}
+    } else {
         pandaStarveTimer = 0;
-        killLast(state.pandas);
     }
-} else {
-    pandaStarveTimer = 0;
-}
         }
-        updateHUD();
     }
-
+    updateHUD();
+    }
     effect.render(scene, camera);
 }
