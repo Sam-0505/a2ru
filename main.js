@@ -3,7 +3,7 @@ import { CustomPeppersGhostEffect } from './CustomPeppersGhostEffect.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 // ── Socket.IO — connect to backend on port 3000 ───────────────────────────────
-const socket = io('http://localhost:3000');
+const socket = io('http://172.22.34.78:3000');
 socket.on('connect', () => console.log('[sim] connected to backend'));
 
 
@@ -14,6 +14,9 @@ var factoryTimer = 0;
 var pandaTimer = 0;
 var fireBurnTimer = 0;
 const maxTreeCount = 25;
+const maxHouseCount = 20;
+const maxFactoryCount = 12;
+var pandaStarveTimer = 0;
 
 // ─── ECOSYSTEM STATE ──────────────────────────────────────────────────────────
 const EARTH_RADIUS = 1.0;
@@ -65,12 +68,35 @@ function surfacePointFrom2D(nx, ny) {
     };
 }
 
+function rand(min, max) {
+    return Math.random() * (max - min) + min;
+}
+
+function nearbyCoords(base, spread = 0.12) {
+    return {
+        x: Math.max(-0.9, Math.min(0.9, base.x + rand(-spread, spread))),
+        y: Math.max(-0.9, Math.min(0.9, base.y + rand(-spread, spread)))
+    };
+}
+function spreadingCoords(base, count, minSpread = 0.08, maxSpread = 0.45, scale = 12) {
+    const spread = Math.min(maxSpread, minSpread + count / scale * (maxSpread - minSpread));
+    return nearbyCoords(base, spread);
+}
+
 function spawnOnSurface(mesh, stateArray, coords = null) {
-    const { pos, normal } = coords ? surfacePointFrom2D(coords.x, coords.y) : randomSurfacePoint();
+    const finalCoords = coords || {
+        x: rand(-0.9, 0.9),
+        y: rand(-0.9, 0.9)
+    };
+
+    const { pos, normal } = surfacePointFrom2D(finalCoords.x, finalCoords.y);
+
     mesh.position.copy(pos);
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
     mesh.userData.targetScale = new THREE.Vector3(1, 1, 1);
+    mesh.userData.coords = finalCoords;   // save area on object
     mesh.scale.set(0.001, 0.001, 0.001);
+
     group.add(mesh);
     stateArray.push(mesh);
     return mesh;
@@ -200,14 +226,15 @@ function buildFire() {
 
 // ─── ECOSYSTEM ACTIONS ────────────────────────────────────────────────────────
 
-export function spawnByType(type) {
+export function spawnByType(type, coords = null) {
     switch (type) {
-        case 'bamboo': spawnOnSurface(buildBamboo(), state.bamboo); break;
-        case 'panda': spawnOnSurface(buildPanda(), state.pandas); break;
-        case 'tree': if (state.trees.length < maxTreeCount) { spawnOnSurface(buildTree(), state.trees); } break;
-        case 'house': spawnOnSurface(buildHouse(), state.houses); break;
-        case 'factory': spawnOnSurface(buildFactory(), state.factories); break;
-        case 'human': spawnOnSurface(buildHuman(), state.humans); // humans remove one tree when immedietly places
+        case 'bamboo': spawnOnSurface(buildBamboo(), state.bamboo, coords); break;
+        case 'panda': spawnOnSurface(buildPanda(), state.pandas, coords); break;
+        case 'tree':
+    if (state.trees.length < maxTreeCount) {spawnOnSurface(buildTree(), state.trees, coords);}break;
+        case 'house': spawnOnSurface(buildHouse(), state.houses, coords); break;
+        case 'factory':spawnOnSurface(buildFactory(), state.factories, coords);break;
+        case 'human': spawnOnSurface(buildHuman(), state.humans, coords); // humans remove one tree when immedietly places
             if (state.trees.length > 0) killLast(state.trees); break;
     }
     updateHUD();
@@ -216,7 +243,18 @@ export function spawnByType(type) {
 function triggerGlobalFire() {
     if (state.isFireActive) return;
     state.isFireActive = true;
-    for (let i = 0; i < 18; i++) spawnOnSurface(buildFire(), state.fires);
+
+    for (let i = 0; i < 18; i++) {
+        if (state.factories.length > 0) {
+            const factory = state.factories[Math.floor(Math.random() * state.factories.length)];
+            spawnOnSurface(
+                buildFire(),
+                state.fires,
+                spreadingCoords(factory.userData.coords, state.fires.length, 0.12, 0.5, 10)
+            );
+        }
+    }
+
     showAlert('Forest fire ignited by climate change!', 'fire');
     updateHUD();
 }
@@ -227,23 +265,13 @@ function stopGlobalFire() {
 
     while (state.fires.length) killLast(state.fires);
 
-    // consume 10 humans to extinguish fire
-    for (let i = 0; i < 10; i++) {
+    // stopping the fire costs most humans
+    const humansLost = Math.min(state.humans.length, 8 + Math.floor(Math.random() * 3)); // 8, 9, or 10
+    for (let i = 0; i < humansLost; i++) {
         if (state.humans.length > 0) killLast(state.humans);
     }
 
-    showAlert('Fire extinguished! Trees will regrow.', 'safe');
-
-    setTimeout(() => {
-        const treesToRegrow = Math.min(6, maxTreeCount - state.trees.length);
-        for (let i = 0; i < treesToRegrow; i++) {
-            setTimeout(() => {
-                if (state.trees.length < maxTreeCount) {
-                    spawnOnSurface(buildTree(), state.trees);
-                }
-            }, i * 350);
-        }
-    }, 1500);
+    showAlert('Fire extinguished! The surviving ecosystem remains.', 'safe');
 
     updateHUD();
 }
@@ -503,8 +531,10 @@ function animate(time = 0) {
     // ── Ecosystem logic ───────────────────────────────────────────────────────
     if (delta > 0) {
 
-        // fire starts at 5 factories
-        if (!state.isFireActive && state.factories.length >= 5) {
+        // more trees = ecosystem can absorb more factory impact
+        const fireThreshold = 5 + Math.floor(state.trees.length / 5);
+
+        if (!state.isFireActive && state.factories.length >= fireThreshold) {
             triggerGlobalFire();
         }
 
@@ -521,68 +551,106 @@ function animate(time = 0) {
 
             // burn everything gradually
             fireBurnTimer += delta;
-            if (fireBurnTimer >= 0.3) {
-                fireBurnTimer = 0;
 
-                if (state.trees.length > 0) killLast(state.trees);
-                else if (state.bamboo.length > 0) killLast(state.bamboo);
-                else if (state.pandas.length > 0) killLast(state.pandas);
-                else if (state.houses.length > 0) killLast(state.houses);
-                else if (state.factories.length > 0) killLast(state.factories);
-            }
+        if (fireBurnTimer >= 0.3) {
+        fireBurnTimer = 0;
+
+        if (state.trees.length > 0) killLast(state.trees);
+        else if (state.bamboo.length > 0) killLast(state.bamboo);
+        else if (state.pandas.length > 0) killLast(state.pandas);
+        else if (state.houses.length > 0) killLast(state.houses);
+        else if (state.factories.length > 0) killLast(state.factories);
+    }
         } else {
             // tree multiplies: 1 tree every 3 seconds
             if (state.trees.length > 0 && state.trees.length < maxTreeCount) {
-                treeTimer += delta;
-                if (treeTimer >= 3) {
-                    treeTimer = 0;
-                    spawnOnSurface(buildTree(), state.trees);
-                }
+            treeTimer += delta;
+            if (treeTimer >= 3) {
+                treeTimer = 0;
+                const parentTree = state.trees[Math.floor(Math.random() * state.trees.length)];
+                spawnOnSurface(buildTree(),state.trees,spreadingCoords(parentTree.userData.coords, state.trees.length)
+                );
             }
+        }
 
             // human creates 1 house every 3 seconds
             if (state.humans.length > 0) {
-                houseTimer += delta;
-                if (houseTimer >= 3) {
-                    houseTimer = 0;
-                    spawnOnSurface(buildHouse(), state.houses);
-                }
-                // human creates 1 factory every 10 seconds
-                factoryTimer += delta;
-                if (factoryTimer >= 10) {
-                    factoryTimer = 0;
-                    spawnOnSurface(buildFactory(), state.factories);
-                }
+    houseTimer += delta;
+    if (houseTimer >= 5) {
+        houseTimer = 0;
+        for (let i = 0; i < state.humans.length; i++) {
+            if (state.houses.length < maxHouseCount) {
+                const human = state.humans[i];
+                spawnOnSurface(
+                    buildHouse(),
+                    state.houses,
+                    spreadingCoords(human.userData.coords, state.houses.length, 0.06, 0.35, 10)
+                );
             }
+        }
+    }
 
-            // When panda is placed: trees grow, and bamboo is consumed
-            if (state.pandas.length > 0) {
-                pandaTimer += delta;
-                if (pandaTimer >= 3) {
-                    pandaTimer = 0;
+    factoryTimer += delta;
+    if (factoryTimer >= 20) {
+        factoryTimer = 0;
+        for (let i = 0; i < state.humans.length; i++) {
+            if (state.factories.length < maxFactoryCount) {
+                const human = state.humans[i];
+                spawnOnSurface(
+                    buildFactory(),
+                    state.factories,
+                    spreadingCoords(human.userData.coords, state.factories.length, 0.06, 0.35, 8)
+                );
+            }
+        }
+    }
+}
+    if (state.pandas.length > 0) {
+    pandaTimer += delta;
+    if (pandaTimer >= 3) {
+        pandaTimer = 0;
 
-                    // 1 tree per panda
-                    for (let i = 0; i < state.pandas.length; i++) {
-                        if (state.trees.length < maxTreeCount) {
-                            spawnOnSurface(buildTree(), state.trees);
-                        }
-                    }
-                    // 1 bamboo per 2 pandas
-                    const bambooToRemove = Math.floor(state.pandas.length / 2);
-                    for (let i = 0; i < bambooToRemove; i++) {
-                        if (state.bamboo.length > 0) killLast(state.bamboo);
-                    }
-                }
+        // 1 tree per panda
+        for (let i = 0; i < state.pandas.length; i++) {
+            if (state.trees.length < maxTreeCount) {
+                const panda = state.pandas[i];
+                spawnOnSurface(
+                    buildTree(),
+                    state.trees,
+                    spreadingCoords(panda.userData.coords, state.trees.length, 0.08, 0.5, 14)
+                );
             }
         }
 
-        // If no bamboo, pandas disappear
-        if (state.bamboo.length === 0) {
-            while (state.pandas.length > 0) {
-                killLast(state.pandas);
-            }
+        // 1 bamboo removed per 2 pandas
+        const bambooToRemove = Math.floor(state.pandas.length / 2);
+        for (let i = 0; i < bambooToRemove; i++) {
+            if (state.bamboo.length > 0) killLast(state.bamboo);
         }
 
+        // breeding: if 2 or more pandas, make 1 new panda
+        if (state.pandas.length >= 2 && state.bamboo.length > 0) {
+            const parentPanda = state.pandas[Math.floor(Math.random() * state.pandas.length)];
+            spawnOnSurface(
+                buildPanda(),
+                state.pandas,
+                spreadingCoords(parentPanda.userData.coords, state.pandas.length, 0.05, 0.25, 10)
+            );
+        }
+    }
+}
+
+if (state.bamboo.length === 0 && state.pandas.length > 0) {
+    pandaStarveTimer += delta;
+
+    if (pandaStarveTimer >= 3) {
+        pandaStarveTimer = 0;
+        killLast(state.pandas);
+    }
+} else {
+    pandaStarveTimer = 0;
+}
+        }
         updateHUD();
     }
 

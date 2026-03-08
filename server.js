@@ -7,13 +7,20 @@ const path = require('path');
 
 const io = new Server(server, {
     cors: {
-        origin: ['http://localhost:8000', 'http://127.0.0.1:8000'],
+        origin: true,
         methods: ['GET', 'POST']
     }
 });
 
 // Serve controller page from /public
 app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'control.html'));
+});
+
+app.get('/index.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'control.html'));
+});
 
 // Socket.IO relay
 io.on('connection', (socket) => {
@@ -32,8 +39,8 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`\nNode backend   : http://localhost:${PORT}`);
-    console.log(`Controller page: http://localhost:${PORT}/control.html`);
-    console.log(`Simulation     : http://localhost:8000  (run: python -m http.server 8000)\n`);
+    console.log(`Controller page: http://localhost:${PORT}`);
+    console.log(`Simulation     : http://localhost:8000  (run: python -m http.server 8000 --bind 0.0.0.0)\n`);
 });
