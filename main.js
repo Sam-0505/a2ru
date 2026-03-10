@@ -1,77 +1,358 @@
-import * as THREE from 'three';
-import { CustomPeppersGhostEffect } from './CustomPeppersGhostEffect.js';
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { mat4, vec3, quat, mat3 } from 'gl-matrix';
 
-// ── Socket.IO — connect to backend on port 3000 ───────────────────────────────
-const socket = io('http://10.49.246.13:3000');
+const socket = io('http://localhost:3000');
 socket.on('connect', () => console.log('[sim] connected to backend'));
 
-
-// Variable counters 
-var treeTimer = 0;
-var houseTimer = 0;
-var factoryTimer = 0;
-var pandaTimer = 0;
-var fireBurnTimer = 0;
-const maxTreeCount = 25;
-const maxHouseCount = 20;
-const maxFactoryCount = 12;
-var pandaStarveTimer = 0;
-
-// ─── ECOSYSTEM STATE ──────────────────────────────────────────────────────────
+// ── Variables Counters ──
+let treeTimer = 0, houseTimer = 0, factoryTimer = 0, pandaTimer = 0, fireBurnTimer = 0, pandaStarveTimer = 0;
+const maxTreeCount = 25, maxHouseCount = 20, maxFactoryCount = 12;
 const EARTH_RADIUS = 1.0;
+
 const state = {
-    bamboo: [],
-    pandas: [],
-    houses: [],
-    factories: [],
-    humans: [],
-    trees: [],
-    fires: [],
-    isFireActive: false,
-    extinctionThreshold: 3,
+    bamboo: [], pandas: [], houses: [], factories: [], humans: [], trees: [], fires: [],
+    isFireActive: false, extinctionThreshold: 3
 };
 
-let container, camera, scene, renderer, effect, group, earthSlice;
+// ── WebGL State ──
+let canvas, gl;
+let defaultProgram;
+let geometries = {};
 let lastTime = 0;
-let pandaFBXTemplate = null;   // preloaded FBX, cloned per spawn
+
+// Configs for Holographic effect
+const effect = {
+    cameraDistance: 2.3,
+    centerGap: 141,
+    viewScale: 1.45,
+    curvature: 1.16
+};
+
+// ── Shaders ──
+const vsSource = `#version 300 es
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec3 aColor;
+
+uniform mat4 uModelMatrix;
+uniform mat4 uViewMatrix;
+uniform mat4 uProjectionMatrix;
+uniform mat3 uWorldNormalMatrix;
+
+out vec3 vWorldNormal;
+out vec3 vColor;
+out vec3 vWorldPos;
+
+void main() {
+    vec4 worldPos = uModelMatrix * vec4(aPosition, 1.0);
+    gl_Position = uProjectionMatrix * uViewMatrix * worldPos;
+    vWorldNormal = uWorldNormalMatrix * aNormal;
+    vColor = aColor;
+    vWorldPos = vec3(worldPos);
+}`;
+
+const fsSource = `#version 300 es
+precision mediump float;
+
+in vec3 vWorldNormal;
+in vec3 vColor;
+in vec3 vWorldPos;
+
+out vec4 fragColor;
+
+void main() {
+    vec3 normal = normalize(vWorldNormal);
+    
+    // Sun
+    vec3 sunPos = vec3(5.0, 5.0, 5.0);
+    vec3 sunDir = normalize(sunPos - vWorldPos);
+    float sunDiff = max(dot(normal, sunDir), 0.0) * 1.5;
+    
+    // Fill
+    vec3 fillPos = vec3(-5.0, -5.0, -5.0);
+    vec3 fillDir = normalize(fillPos - vWorldPos);
+    float fillDiff = max(dot(normal, fillDir), 0.0) * 0.8;
+    
+    float ambient = 0.3;
+    vec3 lightColor = vec3(1.0) * sunDiff + vec3(1.0, 0.86, 0.66) * fillDiff + vec3(ambient);
+    
+    vec3 color = vColor * lightColor;
+    // Basic gamma
+    color = pow(color, vec3(1.0/2.2));
+    
+    fragColor = vec4(color, 1.0);
+}`;
 
 init();
-animate();
+requestAnimationFrame(animate);
 
-// ─── SURFACE HELPERS ─────────────────────────────────────────────────────────
+// ── Init ──
+function init() {
+    canvas = document.createElement('canvas');
+    document.body.appendChild(canvas);
+    gl = canvas.getContext('webgl2');
 
-function randomSurfacePoint() {
-    return surfacePointFrom2D(
-        (Math.random() - 0.5) * 2 * 0.9, // random x between -0.9 and 0.9
-        (Math.random() - 0.5) * 2 * 0.9  // random y between -0.9 and 0.9
-    );
+    if (!gl) { alert('WebGL2 not supported'); return; }
+
+    resize();
+    window.addEventListener('resize', resize);
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+    const vs = compileShader(gl.VERTEX_SHADER, vsSource);
+    const fs = compileShader(gl.FRAGMENT_SHADER, fsSource);
+    defaultProgram = gl.createProgram();
+    gl.attachShader(defaultProgram, vs);
+    gl.attachShader(defaultProgram, fs);
+    gl.linkProgram(defaultProgram);
+
+    // Geometry buffers
+    geometries.earth = createSphere(EARTH_RADIUS, 32, 16, [0.36, 0.25, 0.21], effect.curvature); // Brown
+    geometries.tree = createCone(0.07, 0.15, [0.18, 0.49, 0.19]); // Green
+    geometries.bamboo = createCylinder(0.01, 0.2, [0.48, 0.7, 0.26]); // Light Green
+    geometries.panda = createCube(0.08, 0.08, 0.08, [1.0, 1.0, 1.0]); // White cube fallback
+    geometries.house = createCube(0.13, 0.1, 0.13, [1.0, 0.8, 0.5]); // Orangeish
+    geometries.factory = createCube(0.17, 0.19, 0.15, [0.38, 0.38, 0.38]); // Grey
+    geometries.human = createCylinder(0.02, 0.1, [0.1, 0.46, 0.82]); // Blue
+    geometries.fire = createCone(0.05, 0.15, [1.0, 0.24, 0.0]); // Red
+
+    // Events
+    document.getElementById('start-btn').addEventListener('click', () => {
+        const docElm = document.documentElement;
+        try {
+            if (docElm.requestFullscreen) {
+                docElm.requestFullscreen().catch(e => console.warn(e));
+            } else if (docElm.webkitRequestFullscreen) {
+                docElm.webkitRequestFullscreen();
+            } else if (docElm.mozRequestFullScreen) {
+                docElm.mozRequestFullScreen();
+            } else if (docElm.msRequestFullscreen) {
+                docElm.msRequestFullscreen();
+            }
+        } catch (error) {
+            console.error('Fullscreen request failed', error);
+        }
+        document.getElementById('start-btn').style.display = 'none';
+    });
+    setTimeout(() => { document.getElementById('info').style.opacity = '0'; }, 3000);
+
+    // Socket binds
+    socket.on('add-object', d => spawnByType(d.type, d.coords));
+    socket.on('trigger-fire', () => triggerGlobalFire());
+    socket.on('stop-fire', () => stopGlobalFire());
+
+    socket.on('update-display', d => {
+        if (d.cameraDistance !== undefined) effect.cameraDistance = d.cameraDistance;
+        if (d.spreadDistance !== undefined) effect.centerGap = d.spreadDistance;
+        if (d.projectionSize !== undefined) effect.viewScale = d.projectionSize;
+        if (d.curvature !== undefined && d.curvature !== effect.curvature) {
+            effect.curvature = d.curvature;
+            // Clean up old WebGL buffers for Earth
+            if (geometries.earth) {
+                gl.deleteBuffer(geometries.earth.ibo);
+                for(const b of geometries.earth.vbos) gl.deleteBuffer(b);
+                gl.deleteVertexArray(geometries.earth.vao);
+            }
+            geometries.earth = createSphere(EARTH_RADIUS, 32, 16, [0.36, 0.25, 0.21], effect.curvature);
+        }
+    });
+
+    setInterval(() => {
+        socket.emit('state-update', {
+            pandas: state.pandas.length, bamboo: state.bamboo.length, trees: state.trees.length,
+            houses: state.houses.length, factories: state.factories.length, humans: state.humans.length,
+            fire: state.isFireActive
+        });
+    }, 2000);
+
+    updateHUD();
 }
 
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+
+function compileShader(type, source) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, source);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        console.error(gl.getShaderInfoLog(s));
+    }
+    return s;
+}
+
+// ── Geometry Helpers ──
+function createBuffer(data, usage = gl.STATIC_DRAW) {
+    const b = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), usage);
+    return b;
+}
+
+function createIndexBuffer(data) {
+    const b = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, b);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(data), gl.STATIC_DRAW);
+    return b;
+}
+
+function setupVAO(positions, normals, colors, indices) {
+    const vao = gl.createVertexArray();
+    const vbos = [];
+    gl.bindVertexArray(vao);
+
+    const posBuf = createBuffer(positions);
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(0);
+    vbos.push(posBuf);
+
+    const normBuf = createBuffer(normals);
+    gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(1);
+    vbos.push(normBuf);
+
+    const colorBuf = createBuffer(colors);
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuf);
+    gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(2);
+    vbos.push(colorBuf);
+
+    const ibo = createIndexBuffer(indices);
+    gl.bindVertexArray(null);
+    return { vao, length: indices.length, ibo, vbos };
+}
+
+function createCube(w, h, d, color) {
+    const pos = [
+        -w / 2, -h / 2, d / 2, w / 2, -h / 2, d / 2, w / 2, h / 2, d / 2, -w / 2, h / 2, d / 2, // Front
+        -w / 2, -h / 2, -d / 2, -w / 2, h / 2, -d / 2, w / 2, h / 2, -d / 2, w / 2, -h / 2, -d / 2, // Back
+        -w / 2, h / 2, -d / 2, -w / 2, h / 2, d / 2, w / 2, h / 2, d / 2, w / 2, h / 2, -d / 2, // Top
+        -w / 2, -h / 2, -d / 2, w / 2, -h / 2, -d / 2, w / 2, -h / 2, d / 2, -w / 2, -h / 2, d / 2, // Bottom
+        w / 2, -h / 2, -d / 2, w / 2, h / 2, -d / 2, w / 2, h / 2, d / 2, w / 2, -h / 2, d / 2, // Right
+        -w / 2, -h / 2, -d / 2, -w / 2, -h / 2, d / 2, -w / 2, h / 2, d / 2, -w / 2, h / 2, -d / 2  // Left
+    ];
+    const nor = [
+        0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, // Front
+        0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, // Back
+        0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, // Top
+        0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, // Bottom
+        1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, // Right
+        -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0  // Left
+    ];
+    const col = [];
+    for (let i = 0; i < 24; i++) col.push(...color);
+    const ind = [
+        0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11,
+        12, 13, 14, 12, 14, 15, 16, 17, 18, 16, 18, 19, 20, 21, 22, 20, 22, 23
+    ];
+    // Offset cube to bottom center (pivot base)
+    for (let i = 1; i < pos.length; i += 3) pos[i] += h / 2;
+    return setupVAO(pos, nor, col, ind);
+}
+
+function createCone(radius, height, color) {
+    const pos = [], nor = [], col = [], ind = [];
+    const segments = 12;
+    pos.push(0, height, 0); nor.push(0, 1, 0); col.push(...color);
+    for (let i = 0; i <= segments; i++) {
+        const a = (i / segments) * Math.PI * 2;
+        pos.push(Math.cos(a) * radius, 0, Math.sin(a) * radius);
+        nor.push(Math.cos(a), 0.5, Math.sin(a)); // approx normal
+        col.push(...color);
+    }
+    for (let i = 1; i <= segments; i++) {
+        ind.push(0, i, i + 1);
+    }
+    return setupVAO(pos, nor, col, ind);
+}
+
+function createCylinder(radius, height, color) {
+    return createCube(radius * 2, height, radius * 2, color); // Simple fallback for cylinder until detailed mesh generator needed
+}
+
+function createSphere(radius, widthSegments, heightSegments, color, thetaLength = Math.PI) {
+    const pos = [], nor = [], col = [], ind = [];
+    for (let y = 0; y <= heightSegments; y++) {
+        const v = y / heightSegments;
+        for (let x = 0; x <= widthSegments; x++) {
+            const u = x / widthSegments;
+            const px = radius * Math.sin(v * thetaLength) * Math.cos(u * Math.PI * 2);
+            const py = radius * Math.cos(v * thetaLength);
+            const pz = radius * Math.sin(v * thetaLength) * Math.sin(u * Math.PI * 2);
+            pos.push(px, py, pz);
+            let n = vec3.normalize(vec3.create(), [px, py, pz]);
+            nor.push(n[0], n[1], n[2]);
+            col.push(...color);
+        }
+    }
+    for (let y = 0; y < heightSegments; y++) {
+        for (let x = 0; x < widthSegments; x++) {
+            const a = x + (widthSegments + 1) * y;
+            const b = x + (widthSegments + 1) * (y + 1);
+            const c = (x + 1) + (widthSegments + 1) * (y + 1);
+            const d = (x + 1) + (widthSegments + 1) * y;
+            ind.push(a, b, d);
+            ind.push(b, c, d);
+        }
+    }
+    // Offset sphere bottom to Y = 0 (origin) 
+    for (let i = 1; i < pos.length; i += 3) pos[i] -= radius;
+    return setupVAO(pos, nor, col, ind);
+}
+
+// ── Math & Transformation ──
 function surfacePointFrom2D(nx, ny) {
-    // Distance from center, capped at 1.0 (the edge of the dome)
     const r = Math.min(Math.sqrt(nx * nx + ny * ny), 1.0);
-    // map to theta up to max angle PI/2.5
     const theta = r * (Math.PI / 2.5);
     const phi = Math.atan2(ny, nx);
-    return {
-        pos: new THREE.Vector3(
-            EARTH_RADIUS * Math.sin(theta) * Math.cos(phi),
-            EARTH_RADIUS * Math.cos(theta) - EARTH_RADIUS,
-            EARTH_RADIUS * Math.sin(theta) * Math.sin(phi)
-        ),
-        normal: new THREE.Vector3(
-            Math.sin(theta) * Math.cos(phi),
-            Math.cos(theta),
-            Math.sin(theta) * Math.sin(phi)
-        ).normalize()
-    };
+    const pos = [
+        EARTH_RADIUS * Math.sin(theta) * Math.cos(phi),
+        EARTH_RADIUS * Math.cos(theta) - EARTH_RADIUS,
+        EARTH_RADIUS * Math.sin(theta) * Math.sin(phi)
+    ];
+    const normal = vec3.normalize(vec3.create(), [
+        Math.sin(theta) * Math.cos(phi),
+        Math.cos(theta),
+        Math.sin(theta) * Math.sin(phi)
+    ]);
+    return { pos, normal };
 }
 
-function rand(min, max) {
-    return Math.random() * (max - min) + min;
+// ── Spawning Objects ──
+class WorldObject {
+    constructor(type, coords) {
+        this.type = type;
+        this.coords = coords;
+        const { pos, normal } = surfacePointFrom2D(coords.x, coords.y);
+        this.position = pos;
+        this.normal = normal;
+        this.scale = 0.001;
+        this.targetScale = 1.0;
+
+        // Calculate quaternion to rotate 'up' (0,1,0) to surface normal
+        this.quat = quat.create();
+        quat.rotationTo(this.quat, [0, 1, 0], this.normal);
+
+        this.matrix = mat4.create();
+    }
+    update(delta) {
+        if (this.scale < this.targetScale) {
+            this.scale += (this.targetScale - this.scale) * 0.06;
+        }
+        mat4.fromRotationTranslationScale(
+            this.matrix,
+            this.quat,
+            this.position,
+            [this.scale, this.scaleY !== undefined ? this.scaleY : this.scale, this.scale]
+        );
+    }
 }
 
+function rand(min, max) { return Math.random() * (max - min) + min; }
 function nearbyCoords(base, spread = 0.12) {
     return {
         x: Math.max(-0.9, Math.min(0.9, base.x + rand(-spread, spread))),
@@ -83,159 +364,24 @@ function spreadingCoords(base, count, minSpread = 0.08, maxSpread = 0.45, scale 
     return nearbyCoords(base, spread);
 }
 
-function spawnOnSurface(mesh, stateArray, coords = null) {
-    const finalCoords = coords || {
-        x: rand(-0.9, 0.9),
-        y: rand(-0.9, 0.9)
-    };
-
-    const { pos, normal } = surfacePointFrom2D(finalCoords.x, finalCoords.y);
-
-    mesh.position.copy(pos);
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-    mesh.userData.targetScale = new THREE.Vector3(1, 1, 1);
-    mesh.userData.coords = finalCoords;   // save area on object
-    mesh.scale.set(0.001, 0.001, 0.001);
-
-    group.add(mesh);
-    stateArray.push(mesh);
-    return mesh;
+function spawnOnSurface(type, stateArray, coords = null) {
+    const finalCoords = coords || { x: rand(-0.9, 0.9), y: rand(-0.9, 0.9) };
+    const obj = new WorldObject(type, finalCoords);
+    stateArray.push(obj);
+    return obj;
 }
-
-function killLast(arr) {
-    if (!arr.length) return;
-    const v = arr.pop();
-    group.remove(v);
-    v.traverse(c => {
-        if (c.isMesh) { c.geometry.dispose(); c.material.dispose(); }
-    });
-}
-
-// ─── OBJECT BUILDERS ─────────────────────────────────────────────────────────
-
-function buildTree() {
-    const g = new THREE.Group();
-    const tGeo = new THREE.CylinderGeometry(0.012, 0.018, 0.12, 6);
-    tGeo.translate(0, 0.06, 0);
-    const cGeo = new THREE.ConeGeometry(0.07, 0.15, 7);
-    cGeo.translate(0, 0.20, 0);
-    g.add(
-        new THREE.Mesh(tGeo, new THREE.MeshStandardMaterial({ color: 0x5D4037 })),
-        new THREE.Mesh(cGeo, new THREE.MeshStandardMaterial({ color: 0x2E7D32 }))
-    );
-    return g;
-}
-
-function buildBamboo() {
-    const g = new THREE.Group();
-    for (let i = 0; i < 3; i++) {
-        const sGeo = new THREE.CylinderGeometry(0.008, 0.01, 0.072, 6);
-        sGeo.translate(0, 0.036 + i * 0.082, 0);
-        const lGeo = new THREE.PlaneGeometry(0.045, 0.016);
-        lGeo.translate(0.028, 0.028 + i * 0.082, 0);
-        g.add(
-            new THREE.Mesh(sGeo, new THREE.MeshStandardMaterial({ color: 0x7CB342 })),
-            new THREE.Mesh(lGeo, new THREE.MeshStandardMaterial({ color: 0x9CCC65, side: THREE.DoubleSide }))
-        );
-    }
-    return g;
-}
-
-function buildPanda() {
-    if (pandaFBXTemplate) {
-        const clone = pandaFBXTemplate.clone();
-        clone.scale.setScalar(0.0008);   // FBX is huge — scale way down
-        clone.traverse(c => {
-            if (c.isMesh) {
-                c.castShadow = true;
-                c.receiveShadow = false;
-            }
-        });
-        return clone;
-    }
-    // Fallback: procedural panda while FBX is loading
-    const g = new THREE.Group();
-    const bGeo = new THREE.SphereGeometry(0.048, 12, 12); bGeo.translate(0, 0.048, 0);
-    const hGeo = new THREE.SphereGeometry(0.032, 12, 12); hGeo.translate(0, 0.114, 0);
-    const wMat = new THREE.MeshStandardMaterial({ color: 0xf8f8f8 });
-    const bMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    g.add(new THREE.Mesh(bGeo, wMat), new THREE.Mesh(hGeo, wMat));
-    for (const sx of [-1, 1]) {
-        const eGeo = new THREE.SphereGeometry(0.013, 6, 6); eGeo.translate(sx * 0.029, 0.138, 0);
-        g.add(new THREE.Mesh(eGeo, bMat));
-    }
-    return g;
-}
-
-function buildHouse() {
-    const g = new THREE.Group();
-    const wGeo = new THREE.BoxGeometry(0.13, 0.10, 0.13); wGeo.translate(0, 0.05, 0);
-    const rGeo = new THREE.ConeGeometry(0.10, 0.075, 4); rGeo.rotateY(Math.PI / 4); rGeo.translate(0, 0.138, 0);
-    const dGeo = new THREE.BoxGeometry(0.028, 0.042, 0.006); dGeo.translate(0, 0.021, 0.066);
-    g.add(
-        new THREE.Mesh(wGeo, new THREE.MeshStandardMaterial({ color: 0xFFCC80 })),
-        new THREE.Mesh(rGeo, new THREE.MeshStandardMaterial({ color: 0xD84315 })),
-        new THREE.Mesh(dGeo, new THREE.MeshStandardMaterial({ color: 0x6D4C41 }))
-    );
-    return g;
-}
-
-function buildFactory() {
-    const g = new THREE.Group();
-    const bGeo = new THREE.BoxGeometry(0.17, 0.19, 0.15); bGeo.translate(0, 0.095, 0);
-    g.add(new THREE.Mesh(bGeo, new THREE.MeshStandardMaterial({ color: 0x616161 })));
-    for (const [ox, h] of [[-0.045, 0.13], [0.04, 0.10]]) {
-        const cGeo = new THREE.CylinderGeometry(0.019, 0.021, h, 6); cGeo.translate(ox, 0.19 + h / 2, 0);
-        const sGeo = new THREE.SphereGeometry(0.024, 6, 6); sGeo.translate(ox, 0.19 + h + 0.026, 0);
-        g.add(
-            new THREE.Mesh(cGeo, new THREE.MeshStandardMaterial({ color: 0x424242 })),
-            new THREE.Mesh(sGeo, new THREE.MeshStandardMaterial({ color: 0x9E9E9E, transparent: true, opacity: 0.55 }))
-        );
-    }
-    return g;
-}
-
-function buildHuman() {
-    const g = new THREE.Group();
-    const tGeo = new THREE.CylinderGeometry(0.014, 0.014, 0.065, 6); tGeo.translate(0, 0.082, 0);
-    const hGeo = new THREE.SphereGeometry(0.019, 8, 8); hGeo.translate(0, 0.135, 0);
-    for (const ox of [-0.011, 0.011]) {
-        const lGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.05, 5); lGeo.translate(ox, 0.025, 0);
-        g.add(new THREE.Mesh(lGeo, new THREE.MeshStandardMaterial({ color: 0x1565C0 })));
-    }
-    g.add(
-        new THREE.Mesh(tGeo, new THREE.MeshStandardMaterial({ color: 0x1976D2 })),
-        new THREE.Mesh(hGeo, new THREE.MeshStandardMaterial({ color: 0xFFCC80 }))
-    );
-    return g;
-}
-
-function buildFire() {
-    const g = new THREE.Group();
-    const cols = [0xFF3D00, 0xFF6D00, 0xFFAB00];
-    for (let i = 0; i < 3; i++) {
-        const h = 0.075 + Math.random() * 0.065;
-        const cGeo = new THREE.ConeGeometry(0.026, h, 6);
-        cGeo.translate((Math.random() - 0.5) * 0.035, h / 2, (Math.random() - 0.5) * 0.035);
-        g.add(new THREE.Mesh(cGeo, new THREE.MeshBasicMaterial({ color: cols[i] })));
-    }
-    g.userData.isFire = true;
-    g.userData.pulsePhase = Math.random() * Math.PI * 2;
-    return g;
-}
-
-// ─── ECOSYSTEM ACTIONS ────────────────────────────────────────────────────────
 
 export function spawnByType(type, coords = null) {
     switch (type) {
-        case 'bamboo': spawnOnSurface(buildBamboo(), state.bamboo, coords); break;
-        case 'panda': spawnOnSurface(buildPanda(), state.pandas, coords); break;
-        case 'tree':
-    if (state.trees.length < maxTreeCount) {spawnOnSurface(buildTree(), state.trees, coords);}break;
-        case 'house': spawnOnSurface(buildHouse(), state.houses, coords); break;
-        case 'factory':spawnOnSurface(buildFactory(), state.factories, coords);break;
-        case 'human': spawnOnSurface(buildHuman(), state.humans, coords); // humans remove one tree when immedietly places
-            if (state.trees.length > 0) killLast(state.trees); break;
+        case 'bamboo': spawnOnSurface(type, state.bamboo, coords); break;
+        case 'panda': spawnOnSurface(type, state.pandas, coords); break;
+        case 'tree': if (state.trees.length < maxTreeCount) spawnOnSurface(type, state.trees, coords); break;
+        case 'house': spawnOnSurface(type, state.houses, coords); break;
+        case 'factory': spawnOnSurface(type, state.factories, coords); break;
+        case 'human':
+            spawnOnSurface(type, state.humans, coords);
+            if (state.trees.length > 0) state.trees.pop();
+            break;
     }
     updateHUD();
 }
@@ -243,18 +389,12 @@ export function spawnByType(type, coords = null) {
 function triggerGlobalFire() {
     if (state.isFireActive) return;
     state.isFireActive = true;
-
     for (let i = 0; i < 18; i++) {
         if (state.factories.length > 0) {
             const factory = state.factories[Math.floor(Math.random() * state.factories.length)];
-            spawnOnSurface(
-                buildFire(),
-                state.fires,
-                spreadingCoords(factory.userData.coords, state.fires.length, 0.12, 0.5, 10)
-            );
+            spawnOnSurface('fire', state.fires, spreadingCoords(factory.coords, state.fires.length, 0.12, 0.5, 10));
         }
     }
-
     showAlert('Forest fire ignited by climate change!', 'fire');
     updateHUD();
 }
@@ -262,22 +402,221 @@ function triggerGlobalFire() {
 function stopGlobalFire() {
     if (!state.isFireActive) return;
     state.isFireActive = false;
-
-    while (state.fires.length) killLast(state.fires);
-
-    // stopping the fire costs most humans
-    const humansLost = Math.min(state.humans.length, 8 + Math.floor(Math.random() * 3)); // 8, 9, or 10
-    for (let i = 0; i < humansLost; i++) {
-        if (state.humans.length > 0) killLast(state.humans);
-    }
-
+    state.fires.length = 0;
+    const humansLost = Math.min(state.humans.length, 8 + Math.floor(Math.random() * 3));
+    for (let i = 0; i < humansLost; i++) state.humans.pop();
     showAlert('Fire extinguished! The surviving ecosystem remains.', 'safe');
-
     updateHUD();
 }
 
-// ─── HUD ──────────────────────────────────────────────────────────────────────
+// ── Rendering Loop ──
+function drawObject(modelMatrix, viewMatrix, projectionMatrix, geometry) {
+    gl.bindVertexArray(geometry.vao);
 
+    const normalMatrix = mat3.create();
+    mat3.normalFromMat4(normalMatrix, modelMatrix);
+
+    gl.uniformMatrix4fv(gl.getUniformLocation(defaultProgram, "uModelMatrix"), false, modelMatrix);
+    gl.uniformMatrix4fv(gl.getUniformLocation(defaultProgram, "uViewMatrix"), false, viewMatrix);
+    gl.uniformMatrix4fv(gl.getUniformLocation(defaultProgram, "uProjectionMatrix"), false, projectionMatrix);
+    gl.uniformMatrix3fv(gl.getUniformLocation(defaultProgram, "uWorldNormalMatrix"), false, normalMatrix);
+
+    gl.drawElements(gl.TRIANGLES, geometry.length, gl.UNSIGNED_SHORT, 0);
+}
+
+function renderSceneFromCamera(viewMatrix, projectionMatrix) {
+    gl.useProgram(defaultProgram);
+
+    const groupMatrix = mat4.create();
+    mat4.translate(groupMatrix, groupMatrix, [0, 0.45, 0]);
+
+    // Draw Earth
+    drawObject(groupMatrix, viewMatrix, projectionMatrix, geometries.earth);
+
+    // Draw all objects
+    const all = [
+        ...state.bamboo, ...state.pandas, ...state.houses,
+        ...state.factories, ...state.humans, ...state.trees, ...state.fires
+    ];
+    for (const obj of all) {
+        const objMod = mat4.create();
+        mat4.multiply(objMod, groupMatrix, obj.matrix);
+        drawObject(objMod, viewMatrix, projectionMatrix, geometries[obj.type]);
+    }
+}
+
+function animate(time = 0) {
+    requestAnimationFrame(animate);
+    const delta = Math.min((time - lastTime) / 1000, 0.1);
+    lastTime = time;
+
+    // Logic update
+    const all = [
+        ...state.bamboo, ...state.pandas, ...state.houses, ...state.factories,
+        ...state.humans, ...state.trees, ...state.fires
+    ];
+    all.forEach(obj => obj.update(delta));
+
+    // Ecosystem simulation
+    if (delta > 0) {
+        const fireThreshold = 5 + Math.floor(state.trees.length / 5);
+        if (!state.isFireActive && state.factories.length >= fireThreshold) triggerGlobalFire();
+        if (state.isFireActive && state.humans.length >= 10) stopGlobalFire();
+
+        if (state.isFireActive) {
+            state.fires.forEach(f => {
+                f.pulsePhase = (f.pulsePhase || 0) + delta * 6;
+                f.scaleY = Math.max(0.3, 1 + Math.sin(f.pulsePhase) * 0.3);
+            });
+
+            fireBurnTimer += delta;
+            if (fireBurnTimer >= 0.3) {
+                fireBurnTimer = 0;
+                if (state.trees.length > 0) state.trees.pop();
+                else if (state.bamboo.length > 0) state.bamboo.pop();
+                else if (state.pandas.length > 0) state.pandas.pop();
+                else if (state.houses.length > 0) state.houses.pop();
+                else if (state.factories.length > 0) state.factories.pop();
+            }
+        } else {
+            if (state.trees.length > 0 && state.trees.length < maxTreeCount) {
+                treeTimer += delta;
+                if (treeTimer >= 3) {
+                    treeTimer = 0;
+                    const p = state.trees[Math.floor(Math.random() * state.trees.length)];
+                    spawnOnSurface('tree', state.trees, spreadingCoords(p.coords, state.trees.length));
+                }
+            }
+            if (state.humans.length > 0) {
+                houseTimer += delta;
+                if (houseTimer >= 5) {
+                    houseTimer = 0;
+                    for (let i = 0; i < state.humans.length && state.houses.length < maxHouseCount; i++) {
+                        spawnOnSurface('house', state.houses, spreadingCoords(state.humans[i].coords, state.houses.length, 0.06, 0.35, 10));
+                    }
+                }
+                factoryTimer += delta;
+                if (factoryTimer >= 20) {
+                    factoryTimer = 0;
+                    for (let i = 0; i < state.humans.length && state.factories.length < maxFactoryCount; i++) {
+                        spawnOnSurface('factory', state.factories, spreadingCoords(state.humans[i].coords, state.factories.length, 0.06, 0.35, 8));
+                    }
+                }
+            }
+            if (state.pandas.length > 0) {
+                pandaTimer += delta;
+                if (pandaTimer >= 3) {
+                    pandaTimer = 0;
+
+                    // 1 tree per panda
+                    for (let i = 0; i < state.pandas.length; i++) {
+                        if (state.trees.length < maxTreeCount) {
+                            const panda = state.pandas[i];
+                            spawnOnSurface('tree', state.trees, spreadingCoords(panda.coords, state.trees.length, 0.08, 0.5, 14));
+                        }
+                    }
+
+                    // 1 bamboo removed per 2 pandas
+                    const bambooToRemove = Math.floor(state.pandas.length / 2);
+                    for (let i = 0; i < bambooToRemove; i++) {
+                        if (state.bamboo.length > 0) state.bamboo.pop();
+                    }
+
+                    // breeding: if 2 or more pandas, make 1 new panda
+                    if (state.pandas.length >= 2 && state.bamboo.length > 0) {
+                        const parentPanda = state.pandas[Math.floor(Math.random() * state.pandas.length)];
+                        spawnOnSurface('panda', state.pandas, spreadingCoords(parentPanda.coords, state.pandas.length, 0.05, 0.25, 10));
+                    }
+                }
+
+                if (state.bamboo.length === 0 && state.pandas.length > 0) {
+                    pandaStarveTimer += delta;
+                    if (pandaStarveTimer >= 3) {
+                        pandaStarveTimer = 0;
+                        state.pandas.pop();
+                    }
+                } else {
+                    pandaStarveTimer = 0;
+                }
+            }
+        }
+    }
+
+    // Holographic rendering logic
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.SCISSOR_TEST);
+
+    const w = canvas.width, h = canvas.height;
+    const cx = w / 2, cy = h / 2;
+    const q = Math.min(w, h) / 3;
+    const s = q * effect.viewScale;
+    const hs = s / 2;
+    const gap = effect.centerGap;
+
+    const projMatrix = mat4.create();
+    mat4.perspective(projMatrix, Math.PI / 3, 1.0, 0.1, 1000.0);
+
+    // ThreeJS creates a camera, sets its position, calls .lookAt(), then applies additional rotations.
+    // The view matrix is the INVERSE of the camera's world matrix.
+    const createCameraViewMatrix = (tx, ty, tz, rotXAxis, rotZAxis) => {
+        const eye = vec3.fromValues(tx, ty, tz);
+
+        // Target is the scene position (0, -0.45, 0)
+        const center = vec3.fromValues(0, -0.45, 0);
+        const up = vec3.fromValues(0, 1, 0);
+
+        // 1. Build a lookAt matrix from eye to center (This IS the view matrix!)
+        const viewMat = mat4.create();
+        mat4.lookAt(viewMat, eye, center, up);
+
+        // 2. Three.js then applies additional rotations directly to the camera object BEFORE inversion.
+        // Because `lookAt` gives us the INVERTED space (View Space) directly, 
+        // applying rotations to the camera in World Space is equivalent to applying 
+        // the INVERSE rotations to the View Matrix.
+
+        // Three.js operation: cam.rotation.x += val -> This is a pitch up/down.
+        // In View Space (where the camera is at origin looking down -Z), we rotate the WORLD inversely.
+        if (rotXAxis !== 0) mat4.rotateX(viewMat, viewMat, -rotXAxis);
+
+        // Three.js operation: cam.rotateZ(val) -> This rolls the camera.
+        // In View Space, we roll the WORLD inversely.
+        if (rotZAxis !== 0) mat4.rotateZ(viewMat, viewMat, -rotZAxis);
+
+        return viewMat;
+    };
+
+    const renderQuad = (viewMatrix, x, y) => {
+        gl.viewport(x, y, s, s);
+        gl.scissor(x, y, s, s);
+        renderSceneFromCamera(viewMatrix, projMatrix);
+    };
+
+    const d = effect.cameraDistance;
+
+    // TOP (F)
+    // ThreeJS: translateZ(d), lookAt(scene), rotateZ(PI)
+    renderQuad(createCameraViewMatrix(0, 0, d, 0, Math.PI), cx - hs, cy + gap);
+
+    // BOTTOM (B)
+    // ThreeJS: translateZ(-d), lookAt(scene), rotation.z += PI, rotateZ(PI)
+    // Net Z rotation implies rolling 2PI (or 0). 
+    // HOWEVER! The camera started at (0,0,0) and translated -d. 
+    // In Three.js, translating a camera BACKWARDS (-Z) puts it "behind" the scene. 
+    // Since lookAt() defaults to updating the up vector, looking from behind flips the Up context differently than looking from front.
+    renderQuad(createCameraViewMatrix(0, 0, -d, 0, 0), cx - hs, cy - s - gap);
+
+    // LEFT (L)
+    // ThreeJS: translateX(-d), lookAt(scene), rotation.x += PI/2, rotateZ(PI)
+    renderQuad(createCameraViewMatrix(-d, 0, 0, Math.PI / 2, Math.PI), cx - s - gap, cy - hs);
+
+    // RIGHT (R)
+    // ThreeJS: translateX(d), lookAt(scene), rotation.x += PI/2, rotateZ(PI)
+    renderQuad(createCameraViewMatrix(d, 0, 0, Math.PI / 2, Math.PI), cx + gap, cy - hs);
+
+    gl.disable(gl.SCISSOR_TEST);
+}
+
+// ── HUD ──
 function updateHUD() {
     document.getElementById('hud-bamboo').textContent = state.bamboo.length;
     document.getElementById('hud-pandas').textContent = state.pandas.length;
@@ -292,366 +631,9 @@ function updateHUD() {
 
 function showAlert(msg, type) {
     const el = document.getElementById('eco-alert');
+    if (!el) return;
     el.textContent = msg;
     el.className = 'eco-alert show ' + type;
     clearTimeout(el._t);
     el._t = setTimeout(() => el.classList.remove('show'), 4000);
-}
-
-// ─── INIT ─────────────────────────────────────────────────────────────────────
-
-function init() {
-    container = document.createElement('div');
-    document.body.appendChild(container);
-
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 100000);
-
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000000);
-
-    group = new THREE.Group();
-    // Shift group 'up' (which flips to 'down' towards the outer edges) 
-    // to give objects (the 'sky') more headroom before the center frame crops them.
-    group.position.y = 0.45;
-    scene.add(group);
-
-    // ── Earth cap ─────────────────────────────────────────────────────────────
-    const earthGeo = new THREE.SphereGeometry(EARTH_RADIUS, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2.5);
-    earthGeo.translate(0, -EARTH_RADIUS, 0);
-
-    const earthMat = new THREE.MeshStandardMaterial({
-        color: 0x5D4037, // Fallback base brown
-        roughness: 1.0,
-        metalness: 0.0
-    });
-
-    earthMat.onBeforeCompile = (shader) => {
-        earthMat.userData.shader = shader;
-        shader.uniforms.noiseScale = { value: 15.0 };
-        shader.uniforms.color1 = { value: new THREE.Color(0x8D6E63) }; // Light dirt/rock
-        shader.uniforms.color2 = { value: new THREE.Color(0x3E2723) }; // Dark soil
-
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <common>',
-            `#include <common>
-             varying vec3 vObjPos;`
-        );
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <begin_vertex>',
-            `#include <begin_vertex>
-             vObjPos = position;`
-        );
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <common>',
-            `#include <common>
-             uniform float noiseScale;
-             uniform vec3 color1;
-             uniform vec3 color2;
-             varying vec3 vObjPos;
-             
-             // Ashima 3D Simplex Noise
-             vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-             vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-             vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
-             vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
-             float snoise(vec3 v) {
-                const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
-                const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
-                vec3 i  = floor(v + dot(v, C.yyy) );
-                vec3 x0 = v - i + dot(i, C.xxx) ;
-                vec3 g = step(x0.yzx, x0.xyz);
-                vec3 l = 1.0 - g;
-                vec3 i1 = min( g.xyz, l.zxy );
-                vec3 i2 = max( g.xyz, l.zxy );
-                vec3 x1 = x0 - i1 + C.xxx;
-                vec3 x2 = x0 - i2 + C.yyy;
-                vec3 x3 = x0 - D.yyy;
-                i = mod289(i); 
-                vec4 p = permute( permute( permute( 
-                           i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
-                         + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
-                         + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
-                float n_ = 0.142857142857;
-                vec3  ns = n_ * D.wyz - D.xzx;
-                vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-                vec4 x_ = floor(j * ns.z);
-                vec4 y_ = floor(j - 7.0 * x_ );
-                vec4 x = x_ *ns.x + ns.yyyy;
-                vec4 y = y_ *ns.x + ns.yyyy;
-                vec4 h = 1.0 - abs(x) - abs(y);
-                vec4 b0 = vec4( x.xy, y.xy );
-                vec4 b1 = vec4( x.zw, y.zw );
-                vec4 s0 = floor(b0)*2.0 + 1.0;
-                vec4 s1 = floor(b1)*2.0 + 1.0;
-                vec4 sh = -step(h, vec4(0.0));
-                vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
-                vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
-                vec3 p0 = vec3(a0.xy,h.x);
-                vec3 p1 = vec3(a0.zw,h.y);
-                vec3 p2 = vec3(a1.xy,h.z);
-                vec3 p3 = vec3(a1.zw,h.w);
-                vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
-                p0 *= norm.x;
-                p1 *= norm.y;
-                p2 *= norm.z;
-                p3 *= norm.w;
-                vec4 m = max(0.5 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
-                m = m * m;
-                return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
-             }
-             float fbm(vec3 p) {
-                 float f = 0.0;
-                 f += 0.5000 * snoise(p); p = p * 2.02;
-                 f += 0.2500 * snoise(p); p = p * 2.03;
-                 f += 0.1250 * snoise(p); p = p * 2.01;
-                 f += 0.0625 * snoise(p);
-                 return f + 0.5;
-             }`
-        );
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <color_fragment>',
-            `#include <color_fragment>
-             float n = fbm(vObjPos * noiseScale);
-             diffuseColor.rgb = mix(color2, color1, clamp(n, 0.0, 1.0));`
-        );
-    };
-
-    earthSlice = new THREE.Mesh(earthGeo, earthMat);
-    group.add(earthSlice);
-
-    // ── Lights ────────────────────────────────────────────────────────────────
-    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
-    const sun = new THREE.PointLight(0xffffff, 10, 100); sun.position.set(5, 5, 5); scene.add(sun);
-    const fill = new THREE.PointLight(0xffddaa, 8, 100); fill.position.set(-5, -5, -5); scene.add(fill);
-
-    // ── Renderer ──────────────────────────────────────────────────────────────
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    container.appendChild(renderer.domElement);
-
-    // ── Effect ────────────────────────────────────────────────────────────────
-    effect = new CustomPeppersGhostEffect(renderer);
-    effect.setSize(window.innerWidth, window.innerHeight);
-    effect.cameraDistance = 2.3;
-    effect.centerGap = 141;
-    effect.viewScale = 1.45;
-    // Also update earth curvature default
-    {
-        const cg = new THREE.SphereGeometry(EARTH_RADIUS, 64, 32, 0, Math.PI * 2, 0, 1.162732);
-        cg.translate(0, -EARTH_RADIUS, 0);
-        earthSlice.geometry = cg;
-    }
-
-    // ── Socket.IO event listeners ─────────────────────────────────────────────
-    socket.on('add-object', d => spawnByType(d.type, d.coords));
-    socket.on('trigger-fire', () => triggerGlobalFire());
-    socket.on('stop-fire', () => stopGlobalFire());
-
-    // Display controls remotely from controller
-    socket.on('update-display', d => {
-        if (d.cameraDistance !== undefined) effect.cameraDistance = d.cameraDistance;
-        if (d.spreadDistance !== undefined) effect.centerGap = d.spreadDistance;
-        if (d.projectionSize !== undefined) effect.viewScale = d.projectionSize;
-        if (d.noiseScale !== undefined && earthSlice.material.userData.shader) {
-            earthSlice.material.userData.shader.uniforms.noiseScale.value = d.noiseScale;
-        }
-        if (d.curvature !== undefined) {
-            earthSlice.geometry.dispose();
-            const g = new THREE.SphereGeometry(EARTH_RADIUS, 64, 32, 0, Math.PI * 2, 0, d.curvature);
-            g.translate(0, -EARTH_RADIUS, 0);
-            earthSlice.geometry = g;
-        }
-    });
-    // Broadcast live state to controller every 2 seconds
-    setInterval(() => {
-        socket.emit('state-update', {
-            pandas: state.pandas.length,
-            bamboo: state.bamboo.length,
-            trees: state.trees.length,
-            houses: state.houses.length,
-            factories: state.factories.length,
-            humans: state.humans.length,
-            fire: state.isFireActive
-        });
-    }, 2000);
-
-    // ── Preload panda FBX ─────────────────────────────────────────────────────
-    new FBXLoader().load(
-        'panda_try_3.fbx',
-        (fbx) => {
-            // Hide any helper/rig/camera objects that FBX may have exported
-            fbx.traverse(c => {
-                if (!c.isMesh && !c.isGroup && c !== fbx) c.visible = false;
-            });
-            fbx.scale.setScalar(0.0008);   // pandasquare1 is very large — scale down
-            fbx.updateMatrixWorld(true);
-            pandaFBXTemplate = fbx;
-            console.log('Panda FBX loaded ✅');
-        },
-        undefined,
-        (err) => console.warn('Could not load pandasquare1.fbx – using fallback geometry', err)
-    );
-
-    // ── Window resize ─────────────────────────────────────────────────────────
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        effect.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    // ── Fade title ────────────────────────────────────────────────────────────
-    setTimeout(() => { document.getElementById('info').style.opacity = '0'; }, 5000);
-
-    document.getElementById('start-btn').addEventListener('click', () => {
-        document.documentElement.requestFullscreen?.();
-        document.getElementById('start-btn').style.display = 'none';
-    });
-
-    updateHUD();
-}
-
-// ─── ANIMATE ─────────────────────────────────────────────────────────────────
-
-function animate(time = 0) {
-    requestAnimationFrame(animate);
-    const delta = Math.min((time - lastTime) / 1000, 0.1);
-    lastTime = time;
-
-    group.rotation.set(0, 0, 0);
-
-    // Grow-in animations
-    const all = [...state.bamboo, ...state.pandas, ...state.houses,
-    ...state.factories, ...state.humans, ...state.trees, ...state.fires];
-    all.forEach(obj => {
-        if (obj.userData.targetScale && obj.scale.x < 0.99)
-            obj.scale.lerp(obj.userData.targetScale, 0.06);
-    });
-
-    // ── Ecosystem logic ───────────────────────────────────────────────────────
-    if (delta > 0) {
-
-        // more trees = ecosystem can absorb more factory impact
-        const fireThreshold = 5 + Math.floor(state.trees.length / 5);
-
-        if (!state.isFireActive && state.factories.length >= fireThreshold) {
-            triggerGlobalFire();
-        }
-
-        // fire stops at 10 humans
-        if (state.isFireActive && state.humans.length >= 10) {
-            stopGlobalFire();
-        }
-
-        if (state.isFireActive) {
-            state.fires.forEach(f => {
-                f.userData.pulsePhase = (f.userData.pulsePhase || 0) + delta * 6;
-                f.scale.y = Math.max(0.3, 1 + Math.sin(f.userData.pulsePhase) * 0.3);
-            });
-
-            // burn everything gradually
-            fireBurnTimer += delta;
-
-        if (fireBurnTimer >= 0.3) {
-        fireBurnTimer = 0;
-
-        if (state.trees.length > 0) killLast(state.trees);
-        else if (state.bamboo.length > 0) killLast(state.bamboo);
-        else if (state.pandas.length > 0) killLast(state.pandas);
-        else if (state.houses.length > 0) killLast(state.houses);
-        else if (state.factories.length > 0) killLast(state.factories);
-    }
-        } else {
-            // tree multiplies: 1 tree every 3 seconds
-            if (state.trees.length > 0 && state.trees.length < maxTreeCount) {
-            treeTimer += delta;
-            if (treeTimer >= 3) {
-                treeTimer = 0;
-                const parentTree = state.trees[Math.floor(Math.random() * state.trees.length)];
-                spawnOnSurface(buildTree(),state.trees,spreadingCoords(parentTree.userData.coords, state.trees.length)
-                );
-            }
-        }
-
-            // human creates 1 house every 3 seconds
-            if (state.humans.length > 0) {
-    houseTimer += delta;
-    if (houseTimer >= 5) {
-        houseTimer = 0;
-        for (let i = 0; i < state.humans.length; i++) {
-            if (state.houses.length < maxHouseCount) {
-                const human = state.humans[i];
-                spawnOnSurface(
-                    buildHouse(),
-                    state.houses,
-                    spreadingCoords(human.userData.coords, state.houses.length, 0.06, 0.35, 10)
-                );
-            }
-        }
-    }
-
-    factoryTimer += delta;
-    if (factoryTimer >= 20) {
-        factoryTimer = 0;
-        for (let i = 0; i < state.humans.length; i++) {
-            if (state.factories.length < maxFactoryCount) {
-                const human = state.humans[i];
-                spawnOnSurface(
-                    buildFactory(),
-                    state.factories,
-                    spreadingCoords(human.userData.coords, state.factories.length, 0.06, 0.35, 8)
-                );
-            }
-        }
-    }
-}
-    if (state.pandas.length > 0) {
-    pandaTimer += delta;
-    if (pandaTimer >= 3) {
-        pandaTimer = 0;
-        
-        // 1 tree per panda
-        for (let i = 0; i < state.pandas.length; i++) {
-            if (state.trees.length < maxTreeCount) {
-                const panda = state.pandas[i];
-                spawnOnSurface(
-                    buildTree(),
-                    state.trees,
-                    spreadingCoords(panda.userData.coords, state.trees.length, 0.08, 0.5, 14)
-                );
-            }
-        }
-
-        // 1 bamboo removed per 2 pandas
-        const bambooToRemove = Math.floor(state.pandas.length / 2);
-        for (let i = 0; i < bambooToRemove; i++) {
-            if (state.bamboo.length > 0) killLast(state.bamboo);
-        }
-
-        
-        // breeding: if 2 or more pandas, make 1 new panda
-        if (state.pandas.length >= 2 && state.bamboo.length > 0) {
-            const parentPanda = state.pandas[Math.floor(Math.random() * state.pandas.length)];
-            spawnOnSurface(
-                buildPanda(),
-                state.pandas,
-                spreadingCoords(parentPanda.userData.coords, state.pandas.length, 0.05, 0.25, 10)
-            );
-        }
-    }
-
-    if (state.bamboo.length === 0 && state.pandas.length > 0) {
-        pandaStarveTimer += delta;
-
-        if (pandaStarveTimer >= 3) {
-            pandaStarveTimer = 0;
-            killLast(state.pandas);}
-    } else {
-        pandaStarveTimer = 0;
-    }
-        }
-    }
-    updateHUD();
-    }
-    effect.render(scene, camera);
 }
