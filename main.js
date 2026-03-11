@@ -150,7 +150,7 @@ function init() {
             // Clean up old WebGL buffers for Earth
             if (geometries.earth) {
                 gl.deleteBuffer(geometries.earth.ibo);
-                for(const b of geometries.earth.vbos) gl.deleteBuffer(b);
+                for (const b of geometries.earth.vbos) gl.deleteBuffer(b);
                 gl.deleteVertexArray(geometries.earth.vao);
             }
             geometries.earth = createSphere(EARTH_RADIUS, 32, 16, [0.36, 0.25, 0.21], effect.curvature);
@@ -556,32 +556,17 @@ function animate(time = 0) {
     const projMatrix = mat4.create();
     mat4.perspective(projMatrix, Math.PI / 3, 1.0, 0.1, 1000.0);
 
-    // ThreeJS creates a camera, sets its position, calls .lookAt(), then applies additional rotations.
-    // The view matrix is the INVERSE of the camera's world matrix.
-    const createCameraViewMatrix = (tx, ty, tz, rotXAxis, rotZAxis) => {
+    // A simplified, physically accurate camera orientation for Pepper's Ghost
+    // The view matrix maps the world into the camera's local viewport correctly framing the object.
+    const createCameraViewMatrix = (tx, ty, tz, ux, uy, uz) => {
         const eye = vec3.fromValues(tx, ty, tz);
 
-        // Target is the scene position (0, -0.45, 0)
-        const center = vec3.fromValues(0, -0.45, 0);
-        const up = vec3.fromValues(0, 1, 0);
+        // Target is the origin (matches Three.js scene position default 0,0,0)
+        const center = vec3.fromValues(0, 0, 0);
+        const up = vec3.fromValues(ux, uy, uz);
 
-        // 1. Build a lookAt matrix from eye to center (This IS the view matrix!)
         const viewMat = mat4.create();
         mat4.lookAt(viewMat, eye, center, up);
-
-        // 2. Three.js then applies additional rotations directly to the camera object BEFORE inversion.
-        // Because `lookAt` gives us the INVERTED space (View Space) directly, 
-        // applying rotations to the camera in World Space is equivalent to applying 
-        // the INVERSE rotations to the View Matrix.
-
-        // Three.js operation: cam.rotation.x += val -> This is a pitch up/down.
-        // In View Space (where the camera is at origin looking down -Z), we rotate the WORLD inversely.
-        if (rotXAxis !== 0) mat4.rotateX(viewMat, viewMat, -rotXAxis);
-
-        // Three.js operation: cam.rotateZ(val) -> This rolls the camera.
-        // In View Space, we roll the WORLD inversely.
-        if (rotZAxis !== 0) mat4.rotateZ(viewMat, viewMat, -rotZAxis);
-
         return viewMat;
     };
 
@@ -593,25 +578,25 @@ function animate(time = 0) {
 
     const d = effect.cameraDistance;
 
-    // TOP (F)
-    // ThreeJS: translateZ(d), lookAt(scene), rotateZ(PI)
-    renderQuad(createCameraViewMatrix(0, 0, d, 0, Math.PI), cx - hs, cy + gap);
+    // TOP
+    // Camera at +Z (Front), ground (-Y) faces the bottom of the viewport 
+    // Since viewport bottom is closer to screen center, the image projects exactly inwards.
+    renderQuad(createCameraViewMatrix(0, 0, d, 0, 1, 0), cx - hs, cy + gap);
 
-    // BOTTOM (B)
-    // ThreeJS: translateZ(-d), lookAt(scene), rotation.z += PI, rotateZ(PI)
-    // Net Z rotation implies rolling 2PI (or 0). 
-    // HOWEVER! The camera started at (0,0,0) and translated -d. 
-    // In Three.js, translating a camera BACKWARDS (-Z) puts it "behind" the scene. 
-    // Since lookAt() defaults to updating the up vector, looking from behind flips the Up context differently than looking from front.
-    renderQuad(createCameraViewMatrix(0, 0, -d, 0, 0), cx - hs, cy - s - gap);
+    // BOTTOM
+    // Camera at -Z (Back), ground (-Y) faces the top of the viewport
+    // Since viewport top is closer to screen center, we map world +Y to screen -Y.
+    renderQuad(createCameraViewMatrix(0, 0, -d, 0, -1, 0), cx - hs, cy - s - gap);
 
-    // LEFT (L)
-    // ThreeJS: translateX(-d), lookAt(scene), rotation.x += PI/2, rotateZ(PI)
-    renderQuad(createCameraViewMatrix(-d, 0, 0, Math.PI / 2, Math.PI), cx - s - gap, cy - hs);
+    // LEFT
+    // Camera at -X, ground (-Y) faces the right of the viewport
+    // 'up' assigned to Z maps scene +Y to screen Left, causing ground to point right toward center.
+    renderQuad(createCameraViewMatrix(-d, 0, 0, 0, 0, 1), cx - s - gap, cy - hs);
 
-    // RIGHT (R)
-    // ThreeJS: translateX(d), lookAt(scene), rotation.x += PI/2, rotateZ(PI)
-    renderQuad(createCameraViewMatrix(d, 0, 0, Math.PI / 2, Math.PI), cx + gap, cy - hs);
+    // RIGHT
+    // Camera at +X, ground (-Y) faces the left of the viewport
+    // 'up' assigned to Z maps scene +Y to screen Right, causing ground to point left toward center.
+    renderQuad(createCameraViewMatrix(d, 0, 0, 0, 0, 1), cx + gap, cy - hs);
 
     gl.disable(gl.SCISSOR_TEST);
 }

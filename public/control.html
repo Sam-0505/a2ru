@@ -296,8 +296,11 @@
         });
 
         // Fire controls
-        document.getElementById('btn-fire').addEventListener('click', () => socket.emit('trigger-fire'));
-        document.getElementById('btn-stop-fire').addEventListener('click', () => socket.emit('stop-fire'));
+        const btnFire = document.getElementById('btn-fire');
+        if (btnFire) btnFire.addEventListener('click', () => socket.emit('trigger-fire'));
+        
+        const btnStopFire = document.getElementById('btn-stop-fire');
+        if (btnStopFire) btnStopFire.addEventListener('click', () => socket.emit('stop-fire'));
 
         // Display Settings Sliders
         const sendDisplayUpdate = () => {
