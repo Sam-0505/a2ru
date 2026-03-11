@@ -180,37 +180,62 @@ async function loadPandaMesh() {
         if (!response.ok) throw new Error('Mesh not found');
         const data = await response.json();
 
+        // --- 0. Rotation Fix (Common for FBX) ---
+        // Rotate -90 on X: y' = z, z' = -y
+        const rotateX = true;
+        const rawPos = data.positions;
+        const rawNorm = data.normals;
+        const rotatedPos = new Float32Array(rawPos.length);
+        const rotatedNorm = new Float32Array(rawNorm.length);
+
+        if (rotateX) {
+            for (let i = 0; i < rawPos.length; i += 3) {
+                rotatedPos[i] = rawPos[i];
+                rotatedPos[i + 1] = rawPos[i + 2];
+                rotatedPos[i + 2] = -rawPos[i + 1];
+
+                if (rawNorm && rawNorm.length > i + 2) {
+                    rotatedNorm[i] = rawNorm[i];
+                    rotatedNorm[i + 1] = rawNorm[i + 2];
+                    rotatedNorm[i + 2] = -rawNorm[i + 1];
+                }
+            }
+        } else {
+            rotatedPos.set(rawPos);
+            rotatedNorm.set(rawNorm);
+        }
+
+        // 1. Calculate Bounding Box for Normalization
         let min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
-        for (let i = 0; i < data.positions.length; i += 3) {
+        for (let i = 0; i < rotatedPos.length; i += 3) {
             for (let j = 0; j < 3; j++) {
-                min[j] = Math.min(min[j], data.positions[i + j]);
-                max[j] = Math.max(max[j], data.positions[i + j]);
+                min[j] = Math.min(min[j], rotatedPos[i + j]);
+                max[j] = Math.max(max[j], rotatedPos[i + j]);
             }
         }
 
-        const pandaSize = 0.12; 
+        // 2. Center and Scale
+        const pandaSize = 0.12;
         const sizeY = max[1] - min[1];
         const scale = pandaSize / (sizeY || 1);
         const centerX = (min[0] + max[0]) / 2;
         const centerZ = (min[2] + max[2]) / 2;
-        const centerY = min[1];
+        const centerY = min[1]; // Pivot at feet
 
-        const positions = [];
-        for (let i = 0; i < data.positions.length; i += 3) {
-            positions.push(
-                (data.positions[i] - centerX) * scale,
-                (data.positions[i + 1] - centerY) * scale,
-                (data.positions[i + 2] - centerZ) * scale
-            );
+        const finalPositions = new Float32Array(rotatedPos.length);
+        for (let i = 0; i < rotatedPos.length; i += 3) {
+            finalPositions[i] = (rotatedPos[i] - centerX) * scale;
+            finalPositions[i + 1] = (rotatedPos[i + 1] - centerY) * scale;
+            finalPositions[i + 2] = (rotatedPos[i + 2] - centerZ) * scale;
         }
 
-        // Use the colors from the FBX if available, otherwise fallback to white
-        const colors = data.colors && data.colors.length === positions.length 
-            ? data.colors 
-            : new Float32Array(positions.length).fill(1.0);
+        // Use the colors from the FBX if available
+        const colors = data.colors && data.colors.length === finalPositions.length
+            ? data.colors
+            : new Float32Array(finalPositions.length).fill(1.0);
 
-        geometries.panda = setupVAO(positions, data.normals, colors, data.indices);
-        console.log("[sim] Panda mesh loaded with colors");
+        geometries.panda = setupVAO(finalPositions, rotatedNorm, colors, data.indices);
+        console.log("[sim] Panda mesh loaded and rotated");
 
     } catch (e) {
         console.warn("[sim] Could not load FBX-JSON:", e.message);
