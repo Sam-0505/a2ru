@@ -111,6 +111,7 @@ function init() {
     geometries.tree = createCone(0.07, 0.15, [0.18, 0.49, 0.19]); // Green
     geometries.bamboo = createCylinder(0.01, 0.2, [0.48, 0.7, 0.26]); // Light Green
     geometries.panda = createCube(0.08, 0.08, 0.08, [1.0, 1.0, 1.0]); // White cube fallback
+    loadPandaMesh();
     geometries.house = createCube(0.13, 0.1, 0.13, [1.0, 0.8, 0.5]); // Orangeish
     geometries.factory = createCube(0.17, 0.19, 0.15, [0.38, 0.38, 0.38]); // Grey
     geometries.human = createCylinder(0.02, 0.1, [0.1, 0.46, 0.82]); // Blue
@@ -171,6 +172,49 @@ function init() {
 function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+}
+
+async function loadPandaMesh() {
+    try {
+        const response = await fetch('public/panda.json');
+        if (!response.ok) throw new Error('Mesh not found');
+        const data = await response.json();
+
+        let min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+        for (let i = 0; i < data.positions.length; i += 3) {
+            for (let j = 0; j < 3; j++) {
+                min[j] = Math.min(min[j], data.positions[i + j]);
+                max[j] = Math.max(max[j], data.positions[i + j]);
+            }
+        }
+
+        const pandaSize = 0.12; 
+        const sizeY = max[1] - min[1];
+        const scale = pandaSize / (sizeY || 1);
+        const centerX = (min[0] + max[0]) / 2;
+        const centerZ = (min[2] + max[2]) / 2;
+        const centerY = min[1];
+
+        const positions = [];
+        for (let i = 0; i < data.positions.length; i += 3) {
+            positions.push(
+                (data.positions[i] - centerX) * scale,
+                (data.positions[i + 1] - centerY) * scale,
+                (data.positions[i + 2] - centerZ) * scale
+            );
+        }
+
+        // Use the colors from the FBX if available, otherwise fallback to white
+        const colors = data.colors && data.colors.length === positions.length 
+            ? data.colors 
+            : new Float32Array(positions.length).fill(1.0);
+
+        geometries.panda = setupVAO(positions, data.normals, colors, data.indices);
+        console.log("[sim] Panda mesh loaded with colors");
+
+    } catch (e) {
+        console.warn("[sim] Could not load FBX-JSON:", e.message);
+    }
 }
 
 function compileShader(type, source) {
