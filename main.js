@@ -108,7 +108,7 @@ function init() {
 
     // Geometry buffers
     geometries.earth = createSphere(EARTH_RADIUS, 32, 16, [0.36, 0.25, 0.21], effect.curvature); // Brown
-    geometries.tree = createCone(0.07, 0.15, [0.18, 0.49, 0.19]); // Green
+    geometries.tree = createTree(0.06, 0.15, [0.18, 0.49, 0.19]); // Trunk + Cone foliage
     geometries.bamboo = createCylinder(0.01, 0.2, [0.48, 0.7, 0.26]); // Light Green
     geometries.panda = createCube(0.08, 0.08, 0.08, [1.0, 1.0, 1.0]); // White cube fallback
     loadPandaMesh();
@@ -323,19 +323,91 @@ function createCube(w, h, d, color) {
     return setupVAO(pos, nor, col, ind);
 }
 
-function createCone(radius, height, color) {
-    const pos = [], nor = [], col = [], ind = [];
+function addCylinderToArrays(pos, nor, col, ind, radius, height, x, y, z, color) {
+    const start = pos.length / 3;
     const segments = 12;
-    pos.push(0, height, 0); nor.push(0, 1, 0); col.push(...color);
+    // Top & Bottom centers
+    pos.push(x, y + height, z); nor.push(0, 1, 0); col.push(...color);
+    pos.push(x, y, z); nor.push(0, -1, 0); col.push(...color);
+
     for (let i = 0; i <= segments; i++) {
         const a = (i / segments) * Math.PI * 2;
-        pos.push(Math.cos(a) * radius, 0, Math.sin(a) * radius);
-        nor.push(Math.cos(a), 0.5, Math.sin(a)); // approx normal
+        const s = Math.sin(a), c = Math.cos(a);
+        // Top ring
+        pos.push(x + c * radius, y + height, z + s * radius);
+        nor.push(0, 1, 0);
+        col.push(...color);
+        // Bottom ring
+        pos.push(x + c * radius, y, z + s * radius);
+        nor.push(0, -1, 0);
+        col.push(...color);
+        // Side top
+        pos.push(x + c * radius, y + height, z + s * radius);
+        nor.push(c, 0, s);
+        col.push(...color);
+        // Side bottom
+        pos.push(x + c * radius, y, z + s * radius);
+        nor.push(c, 0, s);
         col.push(...color);
     }
-    for (let i = 1; i <= segments; i++) {
-        ind.push(0, i, i + 1);
+
+    for (let i = 0; i < segments; i++) {
+        const base = start + 2 + i * 4;
+        // Top cap
+        ind.push(start, base, base + 4);
+        // Bottom cap
+        ind.push(start + 1, base + 5, base + 1);
+        // Sides
+        ind.push(base + 2, base + 3, base + 7);
+        ind.push(base + 2, base + 7, base + 6);
     }
+}
+
+function addConeToArrays(pos, nor, col, ind, radius, height, x, y, z, color) {
+    const start = pos.length / 3;
+    const segments = 12;
+    // Tip
+    pos.push(x, y + height, z); nor.push(0, 1, 0); col.push(...color);
+    // Base center
+    pos.push(x, y, z); nor.push(0, -1, 0); col.push(...color);
+
+    for (let i = 0; i <= segments; i++) {
+        const a = (i / segments) * Math.PI * 2;
+        const s = Math.sin(a), c = Math.cos(a);
+        // Base ring
+        pos.push(x + c * radius, y, z + s * radius);
+        nor.push(0, -1, 0);
+        col.push(...color);
+        // Side face
+        pos.push(x + c * radius, y, z + s * radius);
+        nor.push(c, 0.5, s);
+        col.push(...color);
+    }
+
+    for (let i = 0; i < segments; i++) {
+        const base = start + 2 + i * 2;
+        // Base cap
+        ind.push(start + 1, base + 2, base);
+        // Side face
+        ind.push(start, base + 1, base + 3);
+    }
+}
+
+function createTree(radius, height, foliageColor) {
+    const pos = [], nor = [], col = [], ind = [];
+    const trunkRadius = radius * 0.3;
+    const trunkHeight = height * 0.4;
+    const trunkColor = [0.4, 0.25, 0.15]; // Brown
+
+    addCylinderToArrays(pos, nor, col, ind, trunkRadius, trunkHeight, 0, 0, 0, trunkColor);
+    addConeToArrays(pos, nor, col, ind, radius, height - trunkHeight, 0, trunkHeight, 0, foliageColor);
+
+    return setupVAO(pos, nor, col, ind);
+}
+
+function createCone(radius, height, color) {
+    const pos = [], nor = [], col = [], ind = [];
+    addConeToArrays(pos, nor, col, ind, radius, height, 0, 0, 0, color);
     return setupVAO(pos, nor, col, ind);
 }
 
