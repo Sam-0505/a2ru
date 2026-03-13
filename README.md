@@ -15,13 +15,8 @@ In this project, we use a modern digital variant:
 
 ## 📸 Demo
 
-| Holographic View | Hardware Setup |
-| :---: | :---: |
-| ![Hologram Demo](path/to/hologram_photo.jpg) | ![Setup Demo](path/to/setup_photo.jpg) |
-
-### 🎥 Interaction Video
-[Watch the simulation in action](path/to/demo_video.mp4)
-
+<img width="360" height="640" alt="image" src="demo-photo1.jpeg" />
+<img width="360" height="640" alt="image" src="demo-photo2.jpeg" />
 
 ## 🌟 Concept
 
