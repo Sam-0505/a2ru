@@ -114,7 +114,7 @@ function init() {
     loadPandaMesh();
     geometries.house = createCube(0.13, 0.1, 0.13, [1.0, 0.8, 0.5]); // Orangeish
     geometries.factory = createCube(0.17, 0.19, 0.15, [0.38, 0.38, 0.38]); // Grey
-    geometries.human = createCylinder(0.02, 0.1, [0.1, 0.46, 0.82]); // Blue
+    geometries.human = createMinecraftCharacter([0.1, 0.46, 0.82]); // Minecraft-style character
     geometries.fire = createCone(0.05, 0.15, [1.0, 0.24, 0.0]); // Red
 
     // Events
@@ -336,6 +336,63 @@ function createCone(radius, height, color) {
     for (let i = 1; i <= segments; i++) {
         ind.push(0, i, i + 1);
     }
+    return setupVAO(pos, nor, col, ind);
+}
+
+function createMinecraftCharacter(color) {
+    const pos = [], nor = [], col = [], ind = [];
+    const s = 0.1 / 32; // Scale factor based on pixel dimensions (Minecraft char is 32px tall)
+
+    const skinColor = [0.94, 0.72, 0.63];
+    const shirtColor = color;
+    const pantsColor = [0.22, 0.22, 0.65];
+
+    // Helper to add a block to the combined geometry
+    const addBox = (w, h, d, x, y, z, c) => {
+        const start = pos.length / 3;
+        const hw = w / 2, hh = h / 2, hd = d / 2;
+        const p = [
+            -hw, -hh, hd, hw, -hh, hd, hw, hh, hd, -hw, hh, hd, // Front
+            -hw, -hh, -hd, -hw, hh, -hd, hw, hh, -hd, hw, -hh, -hd, // Back
+            -hw, hh, -hd, -hw, hh, hd, hw, hh, hd, hw, hh, -hd, // Top
+            -hw, -hh, -hd, hw, -hh, -hd, hw, -hh, hd, -hw, -hh, hd, // Bottom
+            hw, -hh, -hd, hw, hh, -hd, hw, hh, hd, hw, -hh, hd, // Right
+            -hw, -hh, -hd, -hw, -hh, hd, -hw, hh, hd, -hw, hh, -hd  // Left
+        ];
+        const n = [
+            0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+            0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1,
+            0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
+            0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0,
+            1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0,
+            -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0
+        ];
+        for (let i = 0; i < p.length; i += 3) {
+            pos.push(p[i] + x, p[i + 1] + y, p[i + 2] + z);
+            nor.push(n[i], n[i+1], n[i+2]);
+            col.push(...c);
+        }
+        const indices = [
+            0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11,
+            12, 13, 14, 12, 14, 15, 16, 17, 18, 16, 18, 19, 20, 21, 22, 20, 22, 23
+        ];
+        for (let i = 0; i < indices.length; i++) {
+            ind.push(indices[i] + start);
+        }
+    };
+
+    // Build the Minecraft character from boxes
+    // Legs
+    addBox(4 * s, 12 * s, 4 * s, -2 * s, 6 * s, 0, pantsColor);
+    addBox(4 * s, 12 * s, 4 * s, 2 * s, 6 * s, 0, pantsColor);
+    // Body
+    addBox(8 * s, 12 * s, 4 * s, 0, 18 * s, 0, shirtColor);
+    // Arms
+    addBox(4 * s, 12 * s, 4 * s, -6 * s, 18 * s, 0, skinColor);
+    addBox(4 * s, 12 * s, 4 * s, 6 * s, 18 * s, 0, skinColor);
+    // Head
+    addBox(8 * s, 8 * s, 8 * s, 0, 28 * s, 0, skinColor);
+
     return setupVAO(pos, nor, col, ind);
 }
 
