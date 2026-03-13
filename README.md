@@ -13,6 +13,16 @@ In this project, we use a modern digital variant:
 - **The Prism**: A plastic pyramid sitting on the screen reflects these four images toward the center.
 - **The Result**: A volumetric illusion where the 3D model appears to exist physically inside the center of the pyramid.
 
+## 📸 Demo
+
+| Holographic View | Hardware Setup |
+| :---: | :---: |
+| ![Hologram Demo](path/to/hologram_photo.jpg) | ![Setup Demo](path/to/setup_photo.jpg) |
+
+### 🎥 Interaction Video
+[Watch the simulation in action](path/to/demo_video.mp4)
+
+
 ## 🌟 Concept
 
 The simulation demonstrates how specific human interventions—such as building factories, spawning humans, or reintroducing pandas—create cascading effects within a micro-ecosystem. By using a holographic display, we aim to bridge the gap between abstract environmental data and a tangible, immersive prototype for educational museum or gallery installations.
