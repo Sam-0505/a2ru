@@ -18,6 +18,8 @@ In this project, we use a modern digital variant:
 <img width="360" height="640" alt="image" src="demo-photo1.jpeg" />
 <img width="360" height="640" alt="image" src="demo-photo2.jpeg" />
 
+https://github.com/user-attachments/assets/be0bcbca-fb44-45f4-835c-090443be5f42
+
 ## 🌟 Concept
 
 The simulation demonstrates how specific human interventions—such as building factories, spawning humans, or reintroducing pandas—create cascading effects within a micro-ecosystem. By using a holographic display, we aim to bridge the gap between abstract environmental data and a tangible, immersive prototype for educational museum or gallery installations.
