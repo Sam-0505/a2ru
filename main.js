@@ -112,8 +112,8 @@ function init() {
     geometries.bamboo = createCylinder(0.01, 0.2, [0.48, 0.7, 0.26]); // Light Green
     geometries.panda = createCube(0.08, 0.08, 0.08, [1.0, 1.0, 1.0]); // White cube fallback
     loadPandaMesh();
-    geometries.house = createCube(0.13, 0.1, 0.13, [1.0, 0.8, 0.5]); // Orangeish
-    geometries.factory = createCube(0.17, 0.19, 0.15, [0.38, 0.38, 0.38]); // Grey
+    geometries.house = createMinecraftHouse([1.0, 0.8, 0.5]); // Minecraft house
+    geometries.factory = createMinecraftFactory(); // Minecraft factory
     geometries.human = createMinecraftCharacter([0.1, 0.46, 0.82]); // Minecraft-style character
     geometries.fire = createCone(0.05, 0.15, [1.0, 0.24, 0.0]); // Red
 
@@ -339,59 +339,95 @@ function createCone(radius, height, color) {
     return setupVAO(pos, nor, col, ind);
 }
 
+function addBoxToArrays(pos, nor, col, ind, w, h, d, x, y, z, c) {
+    const start = pos.length / 3;
+    const hw = w / 2, hh = h / 2, hd = d / 2;
+    const p = [
+        -hw, -hh, hd, hw, -hh, hd, hw, hh, hd, -hw, hh, hd, // Front
+        -hw, -hh, -hd, -hw, hh, -hd, hw, hh, -hd, hw, -hh, -hd, // Back
+        -hw, hh, -hd, -hw, hh, hd, hw, hh, hd, hw, hh, -hd, // Top
+        -hw, -hh, -hd, hw, -hh, -hd, hw, -hh, hd, -hw, -hh, hd, // Bottom
+        hw, -hh, -hd, hw, hh, -hd, hw, hh, hd, hw, -hh, hd, // Right
+        -hw, -hh, -hd, -hw, -hh, hd, -hw, hh, hd, -hw, hh, -hd  // Left
+    ];
+    const n = [
+        0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+        0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1,
+        0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
+        0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0,
+        1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0,
+        -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0
+    ];
+    for (let i = 0; i < p.length; i += 3) {
+        pos.push(p[i] + x, p[i + 1] + y, p[i + 2] + z);
+        nor.push(n[i], n[i + 1], n[i + 2]);
+        col.push(...c);
+    }
+    const indices = [
+        0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11,
+        12, 13, 14, 12, 14, 15, 16, 17, 18, 16, 18, 19, 20, 21, 22, 20, 22, 23
+    ];
+    for (let i = 0; i < indices.length; i++) {
+        ind.push(indices[i] + start);
+    }
+}
+
 function createMinecraftCharacter(color) {
     const pos = [], nor = [], col = [], ind = [];
-    const s = 0.1 / 32; // Scale factor based on pixel dimensions (Minecraft char is 32px tall)
+    const s = 0.1 / 32;
 
     const skinColor = [0.94, 0.72, 0.63];
     const shirtColor = color;
     const pantsColor = [0.22, 0.22, 0.65];
 
-    // Helper to add a block to the combined geometry
-    const addBox = (w, h, d, x, y, z, c) => {
-        const start = pos.length / 3;
-        const hw = w / 2, hh = h / 2, hd = d / 2;
-        const p = [
-            -hw, -hh, hd, hw, -hh, hd, hw, hh, hd, -hw, hh, hd, // Front
-            -hw, -hh, -hd, -hw, hh, -hd, hw, hh, -hd, hw, -hh, -hd, // Back
-            -hw, hh, -hd, -hw, hh, hd, hw, hh, hd, hw, hh, -hd, // Top
-            -hw, -hh, -hd, hw, -hh, -hd, hw, -hh, hd, -hw, -hh, hd, // Bottom
-            hw, -hh, -hd, hw, hh, -hd, hw, hh, hd, hw, -hh, hd, // Right
-            -hw, -hh, -hd, -hw, -hh, hd, -hw, hh, hd, -hw, hh, -hd  // Left
-        ];
-        const n = [
-            0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
-            0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1,
-            0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
-            0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0,
-            1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0,
-            -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0
-        ];
-        for (let i = 0; i < p.length; i += 3) {
-            pos.push(p[i] + x, p[i + 1] + y, p[i + 2] + z);
-            nor.push(n[i], n[i+1], n[i+2]);
-            col.push(...c);
-        }
-        const indices = [
-            0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11,
-            12, 13, 14, 12, 14, 15, 16, 17, 18, 16, 18, 19, 20, 21, 22, 20, 22, 23
-        ];
-        for (let i = 0; i < indices.length; i++) {
-            ind.push(indices[i] + start);
-        }
-    };
+    addBoxToArrays(pos, nor, col, ind, 4 * s, 12 * s, 4 * s, -2 * s, 6 * s, 0, pantsColor);
+    addBoxToArrays(pos, nor, col, ind, 4 * s, 12 * s, 4 * s, 2 * s, 6 * s, 0, pantsColor);
+    addBoxToArrays(pos, nor, col, ind, 8 * s, 12 * s, 4 * s, 0, 18 * s, 0, shirtColor);
+    addBoxToArrays(pos, nor, col, ind, 4 * s, 12 * s, 4 * s, -6 * s, 18 * s, 0, skinColor);
+    addBoxToArrays(pos, nor, col, ind, 4 * s, 12 * s, 4 * s, 6 * s, 18 * s, 0, skinColor);
+    addBoxToArrays(pos, nor, col, ind, 8 * s, 8 * s, 8 * s, 0, 28 * s, 0, skinColor);
 
-    // Build the Minecraft character from boxes
-    // Legs
-    addBox(4 * s, 12 * s, 4 * s, -2 * s, 6 * s, 0, pantsColor);
-    addBox(4 * s, 12 * s, 4 * s, 2 * s, 6 * s, 0, pantsColor);
-    // Body
-    addBox(8 * s, 12 * s, 4 * s, 0, 18 * s, 0, shirtColor);
-    // Arms
-    addBox(4 * s, 12 * s, 4 * s, -6 * s, 18 * s, 0, skinColor);
-    addBox(4 * s, 12 * s, 4 * s, 6 * s, 18 * s, 0, skinColor);
-    // Head
-    addBox(8 * s, 8 * s, 8 * s, 0, 28 * s, 0, skinColor);
+    return setupVAO(pos, nor, col, ind);
+}
+
+function createMinecraftHouse(color) {
+    const pos = [], nor = [], col = [], ind = [];
+    const s = 0.1 / 32;
+
+    const wallColor = [0.6, 0.46, 0.33]; // Wood planks
+    const roofColor = [0.45, 0.25, 0.05]; // Dark wood
+    const doorColor = [0.35, 0.2, 0.05];
+    const windowColor = [0.7, 0.9, 1.0];
+
+    // Main walls
+    addBoxToArrays(pos, nor, col, ind, 24 * s, 16 * s, 20 * s, 0, 8 * s, 0, wallColor);
+    // Roof (flat-ish Minecraft style)
+    addBoxToArrays(pos, nor, col, ind, 28 * s, 4 * s, 24 * s, 0, 18 * s, 0, roofColor);
+    // Door
+    addBoxToArrays(pos, nor, col, ind, 4 * s, 8 * s, 1 * s, 0, 4 * s, 10 * s, doorColor);
+    // Windows
+    addBoxToArrays(pos, nor, col, ind, 4 * s, 4 * s, 1 * s, -6 * s, 10 * s, 10 * s, windowColor);
+    addBoxToArrays(pos, nor, col, ind, 4 * s, 4 * s, 1 * s, 6 * s, 10 * s, 10 * s, windowColor);
+
+    return setupVAO(pos, nor, col, ind);
+}
+
+function createMinecraftFactory() {
+    const pos = [], nor = [], col = [], ind = [];
+    const s = 0.1 / 32;
+
+    const stoneColor = [0.55, 0.55, 0.55];
+    const brickColor = [0.5, 0.2, 0.2];
+    const darkColor = [0.2, 0.2, 0.2];
+
+    // Main hall
+    addBoxToArrays(pos, nor, col, ind, 32 * s, 20 * s, 24 * s, 0, 10 * s, 0, stoneColor);
+    // Side building
+    addBoxToArrays(pos, nor, col, ind, 16 * s, 12 * s, 16 * s, 20 * s, 6 * s, 0, stoneColor);
+    // Large Smokestack
+    addBoxToArrays(pos, nor, col, ind, 8 * s, 40 * s, 8 * s, -8 * s, 20 * s, -4 * s, brickColor);
+    // Smokestack top
+    addBoxToArrays(pos, nor, col, ind, 10 * s, 4 * s, 10 * s, -8 * s, 42 * s, -4 * s, darkColor);
 
     return setupVAO(pos, nor, col, ind);
 }
