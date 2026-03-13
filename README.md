@@ -4,6 +4,15 @@ This project is a prototype holographic installation designed to visualize the d
 
 The installation uses a digital implementation of the **Pepper's Ghost effect** to project a 3D living world into physical space, allowing users to interact with a "Rewilding" simulation via a remote control interface.
 
+### 🎭 What is Pepper's Ghost?
+Pepper's Ghost is an illusion technique used in theaters, haunted house attractions, and museum displays. It works by reflecting an image off a sheet of glass (or transparent plastic) angled at 45 degrees. The viewer sees the reflection of a hidden object overlaid on the scene behind the glass, making the object appear like a translucent, 3D "hologram" floating in mid-air.
+
+In this project, we use a modern digital variant:
+- **The Screen**: Functions as the hidden "stage" or source of light.
+- **The 4-View Array**: The simulation renders four versions of the same world—one for each side of a transparent pyramid.
+- **The Prism**: A plastic pyramid sitting on the screen reflects these four images toward the center.
+- **The Result**: A volumetric illusion where the 3D model appears to exist physically inside the center of the pyramid.
+
 ## 🌟 Concept
 
 The simulation demonstrates how specific human interventions—such as building factories, spawning humans, or reintroducing pandas—create cascading effects within a micro-ecosystem. By using a holographic display, we aim to bridge the gap between abstract environmental data and a tangible, immersive prototype for educational museum or gallery installations.
